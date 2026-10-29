@@ -31,6 +31,6 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
 **Hardware:** Stage 2 + Ableton Push 1 + Teensy 4.1
 **Goal:** Introduce advanced "eyes-off-the-Pi" operation and integrate a custom hardware synth voice.
 
-- [ ] **Push 1 Deep Integration:** Configure the Ableton Push 1 to control Zynthian deeply (via `push_bridge.py`), ensuring the entire ecosystem can be navigated and played almost without looking at the Pi's screen.
+- [ ] **Push 1 Deep Integration:** Configure the Ableton Push 1 to control Zynthian deeply (via `pushy.py`), ensuring the entire ecosystem can be navigated and played almost without looking at the Pi's screen.
 - [ ] **Teensy 4.1 Synthesizer:** Flash the Teensy 4.1 with a dedicated synth firmware.
 - [ ] **Teensy Integration:** Connect and configure the Teensy via USB so it can be controlled by Zynthian's sequencers and routed through its audio matrix.
