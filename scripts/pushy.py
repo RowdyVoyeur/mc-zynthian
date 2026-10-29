@@ -40,7 +40,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Sequence
 
-logger = logging.getLogger("push_bridge")
+logger = logging.getLogger("pushy")
 
 # ============================================================================
 # 1. ABLETON PUSH 1 HARDWARE CONSTANTS (SysEx, CCs, Notes, Glyphs, Colors)

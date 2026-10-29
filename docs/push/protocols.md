@@ -1,4 +1,4 @@
-# Ableton Push 1 Hardware & Zynthian Native Control Reference (`push_bridge` Foundation)
+# Ableton Push 1 Hardware & Zynthian Native Control Reference (`pushy` Foundation)
 
 ## Sources of Information
 
