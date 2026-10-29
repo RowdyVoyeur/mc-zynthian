@@ -406,7 +406,7 @@ Access SD Card Storage Mode by holding `[PROJECT]` while powering on the MC-101:
 - **Custom `INIT` Project Template**: Create a template project on the SD card with `Load Proj = LAST`, pre-mapped `SYS-Ctrl 1–4` knobs, gain-staged levels (`70`), configured `Auto Channel` and `Control Channel`, and custom musical Scatter patches.
 
 ### 10.3 Strategic Opportunities for App & Bridge Development (`mc-zynthian`)
-Because the MC-101 pairs a flagship ZEN-Core engine with a tiny 2-line display and 4 knobs, external software/hardware bridges (like [`push_bridge.py`](https://github.com/RowdyVoyeur/mc-zynthian/blob/738e9e768cedf40afc1fc0455b5f10276795f8a3/docs/mc101/push_bridge.py) on Zynthian) can unlock massive capabilities:
+Because the MC-101 pairs a flagship ZEN-Core engine with a tiny 2-line display and 4 knobs, external software/hardware bridges can unlock massive capabilities:
 
 1. **Deep Visual ZEN-Core & MFX Editor**:
    - Expose all 4 Partials simultaneously on Ableton Push's display/encoders, including the parameters hidden from the MC-101's LCD (full `PENV`/`FENV`/`AENV` 4-point envelopes, 16-step `LFO` sequencer, `PMT` key/velocity splits, `FXM`, and all 32 slots of the 90 `MFX` types) via `DT1`/`RQ1` SysEx.
