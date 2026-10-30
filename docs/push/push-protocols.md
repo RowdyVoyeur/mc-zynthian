@@ -422,7 +422,7 @@ flowchart TD
 
 ### 5.1 Two Deployment Modes: Native `ctrldev` Plugin vs. Standalone Bridge
 1. **Native Zynthian `ctrldev` Driver (`zynthian_ctrldev_ableton_push1.py`)**:
-   - Placed in `/zynthian/zynthian-ui/zyngine/ctrldev/` (or symlinked from `/home/rgsimoes/Software/GitHub/mc-zynthian/scripts/`).
+   - Placed in `/zynthian/zynthian-ui/zyngine/ctrldev/` (or symlinked from [`scripts/pushy.py`](https://github.com/RowdyVoyeur/mc-zynthian/blob/main/scripts/pushy.py)).
    - Inherits from `zynthian_ctrldev_base`, `zynthian_ctrldev_zynpad`, and `zynthian_ctrldev_zynmixer` (building upon the foundation explored in [`JBrumby/zynthian-ui`](https://github.com/JBrumby/zynthian-ui)).
    - Loaded automatically by `zynthian_ctrldev_manager` when Push 1 (`Ableton Push MIDI 1`) is detected via USB!
    - Has **direct in-process Python access** to `self.state_manager`, `self.chain_manager`, `self.zynmixer`, `self.zynseq`, and `zyngui`.
@@ -579,7 +579,7 @@ Replicates Ableton Push 1's renowned **64-pad Isometric Keyboard Layout**:
   - **`[Octave Up]` / `[Octave Down]` (`CC 55` / `CC 54`)**: Shifts the pad grid base octave (`-4` to `+4`), displaying the current note range (`C2 - G6`) on the LCD.
   - **Touchstrip**: Acts as a spring-loaded **Pitch Bend** ribbon (default), **Modulation Wheel (`CC 1`)** fader (toggle with `[Shift] + Touchstrip`), or **MC-101 Scatter Pad** ribbon!
 - **Stage 2/3 MC-101 Deep Integration (`[User]` Button `CC 59`)**:
-  - Pressing `[User]` toggles the Push 1 into **MC-101 Groovebox Master Mode** (leveraging [`docs/mc101/sysex.md`](../mc101/sysex.md) and [`docs/mc101/operation.md`](../mc101/operation.md)), where the 4x4 quadrants trigger MC-101 Clips, Scatter Pads (Ch 13 Notes `60..75`), and 4-Partial ZEN-Core / 90-MFX SysEx parameters on the Push LCD!
+  - Pressing `[User]` toggles the Push 1 into **MC-101 Groovebox Master Mode** (leveraging [`docs/mc101/mc101-sysex.md`](../mc101/mc101-sysex.md) and [`docs/mc101/mc101-operation.md`](../mc101/mc101-operation.md)), where the 4x4 quadrants trigger MC-101 Clips, Scatter Pads (Ch 13 Notes `60..75`), and 4-Partial ZEN-Core / 90-MFX SysEx parameters on the Push LCD!
 
 ---
 

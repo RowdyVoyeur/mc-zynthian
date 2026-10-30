@@ -8,7 +8,7 @@ This document serves as the operational foundation for building software editors
 2. **Roland MC-101 Update Manuals (Ver. 1.02, 1.20, 1.30, 1.50, 1.60, 1.71, 1.80, and 1.81/1.82 release notes)**: All major functional expansions including the Onboard Tone Partial Editor, Undo/Redo, Scene Chain, Clip Chain, Audio Insert, Arpeggiator, Chord Mode, Random Tone Designer, User Sample Editor, SMF/Clip/Pack import/export, and External MIDI Motion recording.
 3. **Roland MC-101 MIDI Implementation Chart (Ver. 1.60+)**: Official transmitted and recognized MIDI messages, CC mappings, Program Change rules, and Realtime sync behavior.
 4. **[Roland MC-101 Shortcuts, Tips & Tricks](https://sites.google.com/view/rolandmc101/home)**: Community-curated operational database covering undocumented workflow shortcuts, sound/PCM organization, Looper memory management, and MIDI routing tricks.
-5. **Hardware Probing & SysEx Research ([`sysex.md`](https://github.com/RowdyVoyeur/mc-zynthian/blob/738e9e768cedf40afc1fc0455b5f10276795f8a3/docs/mc101/sysex.md))**: Internal memory architecture, Slot 17 working buffer mechanics, and SysEx vs. MIDI performance boundaries.
+5. **Hardware Probing & SysEx Research ([`mc101-sysex.md`](mc101-sysex.md))**: Internal memory architecture, Slot 17 working buffer mechanics, and SysEx vs. MIDI performance boundaries.
 
 ---
 
@@ -59,7 +59,7 @@ For `TONE`, `DRUM`, and `DRUM + COMP` tracks, the `Sound Src` setting (`[SHIFT] 
 - **`Sound Src = TRACK` (Default)**: All 16 clips on the track share a single Tone or Drum Kit (and MFX). Switching clips only changes the MIDI phrase and motion automation, guaranteeing zero audio gap or effect tail cutoff during clip transitions.
 - **`Sound Src = CLIP`**: Every clip (`1–16`) on the track stores its own independent Tone or Drum Kit and its own MFX.
   - *Gotcha*: Switching `Sound Src` from `TRACK` to `CLIP` initializes the clip sounds. Use `[SHIFT] + [FX]` $\rightarrow$ `TRK TO CLIP SND` to copy the track's current sound into a clip.
-  - *SysEx Note*: Regardless of whether `Sound Src` is set to `TRACK` or `CLIP`, the currently active sound playing on a track is always mirrored into the track's working buffer (**Slot 17**, see [`sysex.md`](https://github.com/RowdyVoyeur/mc-zynthian/blob/738e9e768cedf40afc1fc0455b5f10276795f8a3/docs/mc101/sysex.md)).
+  - *SysEx Note*: Regardless of whether `Sound Src` is set to `TRACK` or `CLIP`, the currently active sound playing on a track is always mirrored into the track's working buffer (**Slot 17**, see [`mc101-sysex.md`](mc101-sysex.md)).
 
 ---
 
@@ -394,7 +394,7 @@ Access SD Card Storage Mode by holding `[PROJECT]` while powering on the MC-101:
    - Only 4 tracks exist, and only **one** track per project can use the `DRUM + COMP` engine.
 4. **Onboard Sound Editing Blind Spots**:
    - Even with the Ver. 1.80 Partial Editor, the 2-line LCD cannot edit the **16-step LFO Step Modulator**, full **4-stage Envelope levels/times (`T2`, `L0`, `L1`, `L2`, `L4`)**, **Wave Gain**, **FXM**, **Redamper**, **Key/Velocity Fade ranges (`PMT`)**, or the 4 destinations per Matrix Control slot.
-   - **All of these hidden parameters ARE fully accessible over SysEx** (see [`sysex.md`](https://github.com/RowdyVoyeur/mc-zynthian/blob/738e9e768cedf40afc1fc0455b5f10276795f8a3/docs/mc101/sysex.md)).
+   - **All of these hidden parameters ARE fully accessible over SysEx** (see [`mc101-sysex.md`](mc101-sysex.md)).
 5. **Drum Inst Layer Inaccessibility**:
    - Conversely, Drum Pad `Voice` (`MULTI`/`SINGLE`) and `EnvMode` (`NO-SUS`/`SUSTAIN`) *can* be edited on the hardware screen (`[SHIFT] + [SOUND]` on a Drum track), but **cannot** be edited via SysEx.
 6. **External MIDI Motion Cap**:
