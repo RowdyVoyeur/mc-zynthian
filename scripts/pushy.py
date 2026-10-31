@@ -2095,5 +2095,56 @@ def run_self_test() -> None:
     )
 
 
+def run_daemon() -> None:
+    """Runs pushy as a standalone background daemon using mido for ALSA MIDI."""
+    import sys
+    try:
+        import mido
+    except ImportError:
+        logger.error("mido is required to run pushy in daemon mode. Install via: apt install python3-mido python3-rtmidi")
+        print("[ERROR] mido is required to run pushy in daemon mode. Install via: apt install python3-mido python3-rtmidi")
+        sys.exit(1)
+
+    print("[pushy] Ableton Push 1 Zynthian Daemon starting...")
+    while True:
+        try:
+            in_names = mido.get_input_names()
+            out_names = mido.get_output_names()
+            push_in = next((n for n in in_names if "Ableton Push" in n or "Push" in n), None)
+            push_out = next((n for n in out_names if "Ableton Push" in n or "Push" in n), None)
+
+            if not push_in or not push_out:
+                print("[pushy] Waiting for Ableton Push 1 hardware connection...")
+                time.sleep(3)
+                continue
+
+            print(f"[pushy] Connecting to Push 1 IN: '{push_in}', OUT: '{push_out}'")
+            port_in = mido.open_input(push_in)
+            port_out = mido.open_output(push_out)
+
+            backend = ZynthianBackendAdapter()
+            def send_midi(msg_bytes: Sequence[int]):
+                if port_out:
+                    port_out.send(mido.Message.from_bytes(bytes(msg_bytes)))
+
+            ctrl = Push1Controller(backend=backend, send_midi_cb=send_midi)
+            ctrl.init_hardware()
+            print("[pushy] Ableton Push 1 initialized and active. Processing events...")
+
+            for msg in port_in:
+                ctrl.handle_midi_event(msg.bytes())
+
+        except (KeyboardInterrupt, SystemExit):
+            print("[pushy] Shutting down...")
+            break
+        except Exception as e:
+            print(f"[pushy] Error: {e}. Retrying in 3 seconds...")
+            time.sleep(3)
+
+
 if __name__ == "__main__":
-    run_self_test()
+    import sys
+    if "--daemon" in sys.argv or "-d" in sys.argv:
+        run_daemon()
+    else:
+        run_self_test()

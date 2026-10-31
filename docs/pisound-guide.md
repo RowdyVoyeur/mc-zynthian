@@ -2,7 +2,7 @@
 
 Comprehensive hardware reference, low-latency tuning guide, and operational manual for integrating the **Blokas Pisound** soundcard and MIDI interface into the **Zynthian OS** (Raspberry Pi 4 / Blokas Pisound / Custom DIY Enclosure).
 
-This document serves as the technical authority for Stage 1 of the [`mc-zynthian`](../README.md) roadmap, ensuring studio-grade audio quality, ultra-low latency matching or exceeding Blokas Patchbox OS benchmarks, dedicated 5-pin DIN MIDI communication, and multi-gesture control via **The Button**.
+This document serves as the technical authority for Stage 1 of the [`mc-zynthian`](../README.md) roadmap, ensuring studio-grade audio quality, ultra-low latency matching or exceeding Blokas Patchbox OS benchmarks, dedicated 5-pin DIN MIDI communication, and multi-gesture control via **The Button**. For full hardware specifications, bill of materials, and enclosure assembly, see [`docs/rpi-specs.md`](rpi-specs.md) and [`assets/case-assembly.stl`](../assets/case-assembly.stl).
 
 ---
 
@@ -155,54 +155,68 @@ Dir Device    Name
 IO  hw:1,0    pisound MIDI PSND-XXXXX
 ```
 
-### 2.4 Installing the Blokas Software Suite (`pisound-btn` & `pisound-config`)
-To utilize **The Button** daemon and Blokas utilities within Zynthian's Debian-based environment, install the official Blokas repository packages:
+### 2.4 Software Suite (Optional)
+ZynthianOS includes native Linux kernel support and the ALSA driver for Pisound out of the box. No external software packages or additional repositories are needed for full audio and MIDI operation, or for mapping The Button natively in Webconf (see [Section 4.1](#41-native-zynthian-integration-recommended-clean--zero-clutter)).
 
+If you specifically require the third-party Blokas multi-click daemon (`pisound-btn`) or `pisound-config` utilities:
 ```bash
-# 1. Add Blokas APT repository and signing key
+# Optional: only install if using the pisound-btn multi-click daemon
 curl https://blokas.io/apt-setup.sh | sh
-
-# 2. Update package lists
 apt-get update
-
-# 3. Install pisound daemon and configuration tools
-apt-get install -y pisound pisound-btn pisound-config libgpiod-dev
-```
-
-Verify that the `pisound-btn` daemon is active:
-```bash
-systemctl status pisound-btn.service
+apt-get install -y pisound-btn
 ```
 
 ---
 
 ## 3. Low-Latency Performance & Audio Optimization
 
-Blokas Patchbox OS is renowned for achieving round-trip latency as low as $1.33\text{ ms}$. Zynthian OS can easily match or beat these numbers when configured correctly.
+Pisound's dual crystal oscillators and dedicated hardware converters deliver professional, jitter-free low-latency performance. Configuring JACK parameters correctly ensures pristine audio without buffer underruns (XRUNs).
 
 ### 3.1 Understanding Audio Latency Formulas
-Buffer latency is mathematically defined by the audio frame size, buffer periods, and sample rate:
+Real-time audio latency consists of three distinct mathematical metrics:
 
-$$\text{Latency}_{\text{buffer}} = \frac{\text{Buffer Size (Frames)} \times \text{Periods}}{\text{Sample Rate (Hz)}}$$
+1. **JACK Period Deadline ($T_\text{deadline}$):**
+   The time window the CPU has to synthesize or process a single audio block:
+   $$T_\text{deadline} = \frac{\text{Buffer Size (Frames)}}{\text{Sample Rate (Hz)}} = \frac{64}{48000\text{ Hz}} \approx 1.333\text{ ms}$$
+   *(Note: $1.33\text{ ms}$ is the processing period deadline, not the total round-trip latency).*
 
-Round-trip latency (ADC input conversion $\rightarrow$ JACK processing $\rightarrow$ DAC output conversion) is:
+2. **Output Buffer Latency:**
+   The delay between audio leaving the synthesis engine and emerging from the DAC with $n$ periods:
+   $$\text{Latency}_{\text{output}} = \frac{n \times \text{Buffer Size (Frames)}}{\text{Sample Rate (Hz)}} = \frac{2 \times 64}{48000\text{ Hz}} \approx 2.667\text{ ms}$$
 
-$$\text{Latency}_{\text{round-trip}} = \frac{2 \times \text{Buffer Size} \times \text{Periods}}{\text{Sample Rate}} + \text{Hardware Converter Delay}$$
+3. **Approximate Round-Trip Latency (Analog In $\rightarrow$ DSP $\rightarrow$ Analog Out):**
+   Round-trip latency includes ADC capture buffers, the JACK scheduling cycle, DAC playback buffers, and hardware converter group delays (filter decimation/interpolation inside the PCM1804 ADC and PCM5102A DAC, $\approx 0.8\text{ ms} - 1.2\text{ ms}$ at $48\text{ kHz}$):
+   $$\text{Latency}_{\text{round-trip}} \approx \frac{(n + 1) \times \text{Buffer Size}}{\text{Sample Rate}} + \text{Converter Group Delay}$$
 
-| Sample Rate | Buffer Size | Periods | Output Latency | Theoretical Round-Trip | Performance Profile |
-|---|---|---|---|---|---|
-| **$48000\text{ Hz}$** | **$64\text{ frames}$** | **$2$** | **$2.67\text{ ms}$** | **$\sim 4.2\text{ ms}$** | **Ultra-Low Latency / Stage Solo Performance** |
-| **$48000\text{ Hz}$** | **$128\text{ frames}$**| **$2$** | **$5.33\text{ ms}$** | **$\sim 6.8\text{ ms}$** | **Recommended Studio Default (Rock-solid)** |
-| **$48000\text{ Hz}$** | **$256\text{ frames}$**| **$2$** | **$10.67\text{ ms}$**| **$\sim 12.1\text{ ms}$**| **Heavy Multitrack & Dense Multi-FX Chains** |
-| **$96000\text{ Hz}$** | **$64\text{ frames}$** | **$2$** | **$1.33\text{ ms}$** | **$\sim 2.5\text{ ms}$** | **Extreme Low Latency (Benchmark Matching)** |
-| **$96000\text{ Hz}$** | **$128\text{ frames}$**| **$2$** | **$2.67\text{ ms}$** | **$\sim 3.8\text{ ms}$** | **High-Bandwidth Audiophile DSP** |
+| Sample Rate | Buffer Size | Periods | Period Deadline | Output Buffer | Approx. Round-Trip | Performance Profile |
+|---|---|---|---|---|---|---|
+| **$48000\text{ Hz}$** | **$64\text{ frames}$** | **$2$** | **$1.33\text{ ms}$** | **$2.67\text{ ms}$** | **$\approx 4.8 - 5.2\text{ ms}$** | **Ultra-Low Latency / Stage Solo Performance** |
+| **$48000\text{ Hz}$** | **$128\text{ frames}$**| **$2$** | **$2.67\text{ ms}$** | **$5.33\text{ ms}$** | **$\approx 8.8 - 9.2\text{ ms}$** | **Recommended Stage Default (Rock-solid)** |
+| **$48000\text{ Hz}$** | **$256\text{ frames}$**| **$2$** | **$5.33\text{ ms}$** | **$10.67\text{ ms}$**| **$\approx 16.8 - 17.2\text{ ms}$**| **Heavy Multitrack & Dense Multi-FX Chains** |
+| **$44100\text{ Hz}$** | **$64\text{ frames}$** | **$2$** | **$1.45\text{ ms}$** | **$2.90\text{ ms}$** | **$\approx 5.3 - 5.7\text{ ms}$** | **Optimal for Stage 2 & 3 (MC-101 / Teensy Sync)** |
+| **$44100\text{ Hz}$** | **$128\text{ frames}$**| **$2$** | **$2.90\text{ ms}$** | **$5.80\text{ ms}$** | **$\approx 9.6 - 10.0\text{ ms}$**| **Recommended Stage 2 & 3 Standard** |
 
-### 3.2 Configuring JACK in Zynthian Webconf
-1. Go to **Hardware** $\rightarrow$ **Audio**.
-2. Set **Jack Sample Rate** to **`48000`** (recommended standard for synth engines and Roland MC-101 sync) or **`96000`** (for minimum latency).
-3. Set **Jack Buffer Size** to **`128`** (or **`64`** if using lighter synth engines like Pianoteq or Dexed).
+> [!TIP]
+> **Measuring True Round-Trip Latency:**
+> To measure exact round-trip latency on your hardware unit down to the microsecond, connect a 1/4" patch cable between Pisound's Output and Input jacks and run the standard JACK utility:
+> ```bash
+> jack_iodelay
+> ```
+
+### 3.2 Sample Rate Strategy: 48 kHz vs 44.1 kHz
+- **Stage 1 (Pisound Standalone):** Running JACK at **$48000\text{ Hz}$** is the standard default for Zynthian synth engines (ZynAddSubFX, Pianoteq, Fluidsynth) and provides slightly lower buffer latency.
+- **Stage 2 & Stage 3 (Roland MC-101 & Teensy USB Audio):** **Switch Zynthian JACK to $44100\text{ Hz}$**.
+  - The Roland MC-101 operates fixed at $44.1\text{ kHz}$ in USB vendor mode ([`docs/mc101-guide.md`](mc101-guide.md)).
+  - Teensy 4.1 USB Audio runs fixed at 16-bit / $44.1\text{ kHz}$ ([`docs/teensy-guide.md`](teensy-guide.md)).
+  - Pisound features a dedicated onboard **$22.5792\text{ MHz}$** quartz oscillator for native, zero-jitter $44.1\text{ kHz}$ operation.
+  - Running JACK at $44.1\text{ kHz}$ eliminates continuous CPU-heavy sample-rate conversion (resampling) across all USB audio bridges, preventing drift artifacts and reducing CPU load.
+
+### 3.3 Configuring JACK in Zynthian Webconf
+1. Navigate to **Hardware** $\rightarrow$ **Audio** in Zynthian Webconf.
+2. Set **Jack Sample Rate** to **`48000`** (Stage 1) or **`44100`** (Stages 2 & 3).
+3. Set **Jack Buffer Size** to **`128`** (safe default) or **`64`** (ultra-low latency).
 4. Set **Jack Periods** to **`2`**.
-5. Click **Save** and restart JACK.
+5. Click **Save** to restart JACK with the new settings.
 
 ### 3.3 Linux System & Kernel Tuning
 Ensure Zynthian OS prioritizes real-time audio threads without CPU-throttling interruptions:
@@ -240,93 +254,74 @@ iwconfig wlan0 power off
 
 The multi-function tactile pushbutton on Pisound (**The Button**) is wired to **GPIO 17** (Physical Pin 11) with an internal pull-up resistor. Pressing the button pulls GPIO 17 to ground (`Active-Low`).
 
-```
-+---------------------------------------------------------------------------------------------------+
-| Single Click    (CLICK_1)  ---> Toggle Audio Routing / Toggle Playback (CUIA: TOGGLE_PLAY)        |
-| Double Click    (CLICK_2)  ---> Switch Next Snapshot / Preset Bank (CUIA: NEXT_SNAPSHOT)         |
-| Triple Click    (CLICK_3)  ---> MIDI Panic / All Notes Off (CUIA: ALL_NOTES_OFF)                  |
-| Click 4+ Times  (OTHER)    ---> Toggle Master Mute (CUIA: TOGGLE_MUTE)                            |
-| Hold 1s - 3s    (HOLD_1S)  ---> Jump to Mixer Screen (CUIA: SCREEN_MIXER)                         |
-| Hold 3s - 5s    (HOLD_3S)  ---> Toggle Wi-Fi Hotspot / Network Access Point Mode                 |
-| Hold 5s+        (HOLD_5S)  ---> Safe System Poweroff / Shutdown (systemctl poweroff)              |
-+---------------------------------------------------------------------------------------------------+
-```
+There are two distinct methods to integrate The Button into Zynthian:
+1. **Native Zynthian Hardware Switch (Recommended — Zero Extra Software)**
+2. **`pisound-btn` Background Daemon (Optional — Multi-click Gestures)**
 
-### 4.1 Configuring the Button Daemon (`/etc/pisound.conf`)
-The `pisound-btn` daemon continuously monitors GPIO 17, detects single clicks, double clicks, multi-clicks, and press-duration holds, and maps them to executable scripts.
+---
 
-Edit the configuration file:
-```bash
-nano /etc/pisound.conf
-```
+### 4.1 Native Zynthian Integration (Recommended: Clean & Zero-Clutter)
 
-Configure the action bindings:
-```text
-# /etc/pisound.conf - Zynthian Pisound Button Action Mappings
-DOWN          /usr/local/pisound/scripts/pisound-btn/system/down.sh
-UP            /usr/local/pisound/scripts/pisound-btn/system/up.sh
+In accordance with the project rule to keep the Raspberry Pi free of unnecessary background packages, ZynthianOS provides built-in native support for GPIO pushbuttons without installing any external daemons or modifying third-party apt repositories.
 
-# Clicks
-CLICK_1       /usr/local/pisound/scripts/pisound-btn/zynthian_toggle_play.sh
-CLICK_2       /usr/local/pisound/scripts/pisound-btn/zynthian_next_snapshot.sh
-CLICK_3       /usr/local/pisound/scripts/pisound-btn/zynthian_panic.sh
-CLICK_OTHER   /usr/local/pisound/scripts/pisound-btn/zynthian_toggle_mute.sh
+Zynthian supports three distinct physical press gestures per switch:
+- **Short Press:** Quick tap ($< 0.3\text{ s}$).
+- **Bold Press:** Deliberate hold ($\approx 0.3\text{ s} - 1.2\text{ s}$).
+- **Long Press:** Extended hold ($> 1.2\text{ s}$).
 
-CLICK_COUNT_LIMIT 8
-
-# Holds
-HOLD_1S       /usr/local/pisound/scripts/pisound-btn/zynthian_screen_mixer.sh
-HOLD_3S       /usr/local/pisound/scripts/pisound-btn/toggle_wifi_hotspot.sh
-HOLD_5S       /usr/local/pisound/scripts/pisound-btn/shutdown.sh
-```
-
-### 4.2 Integrating with Zynthian via CUIA (Callable UI Actions) & OSC
-Zynthian exposes its entire user interface engine over **UDP OSC Port `1370`**. We can trigger any native UI action instantly from shell scripts using `oscsend` (included in Zynthian via `liblo-utils`).
-
-Create the custom Zynthian integration scripts in `/usr/local/pisound/scripts/pisound-btn/`:
-
-#### 1. Single Click: Toggle Play / Stop (`zynthian_toggle_play.sh`)
-```bash
-#!/bin/bash
-# Toggle Zynthian Sequencer / Audio Playback
-oscsend 127.0.0.1 1370 /cuia/toggle_play
-```
-
-#### 2. Double Click: Next Snapshot (`zynthian_next_snapshot.sh`)
-```bash
-#!/bin/bash
-# Load next performance snapshot
-oscsend 127.0.0.1 1370 /cuia/next_snapshot
-```
-
-#### 3. Triple Click: MIDI Panic / Silence (`zynthian_panic.sh`)
-```bash
-#!/bin/bash
-# Send All Notes Off & reset all synth engines
-oscsend 127.0.0.1 1370 /cuia/all_notes_off
-```
-
-#### 4. Hold 1s: Jump to Zynthian Mixer (`zynthian_screen_mixer.sh`)
-```bash
-#!/bin/bash
-# Switch touchscreen display to Zynmixer view
-oscsend 127.0.0.1 1370 /cuia/screen_mixer
-```
-
-#### 5. Make Scripts Executable & Restart Daemon
-```bash
-chmod +x /usr/local/pisound/scripts/pisound-btn/zynthian_*.sh
-systemctl restart pisound-btn
-```
-
-### 4.3 Alternative Approach: Direct GPIO Switch in Zynthian Webconf
-If you prefer not to run the background `pisound-btn` daemon, you can configure Zynthian's UI directly to read GPIO 17 as a hardware switch:
-
+#### Step-by-Step Setup:
 1. Open Zynthian Webconf: `https://zynthian.local`
 2. Navigate to **Hardware** $\rightarrow$ **Wiring Layout**.
-3. Select **`Custom`** wiring.
-4. Under **Switches / Pushbuttons**, assign an unused switch action (e.g., `Switch 1` or `Select Button`) to **`GPIO 17`**.
-5. Save and reboot. Zynthian's core UI thread will now read The Button natively.
+3. Under **Wiring Layout**, select **`Custom`** (or edit your existing custom profile).
+4. Assign an available switch index (e.g. `Switch 4` or `Switch 1`) to pin **`17`** (GPIO 17, Active-Low).
+5. Navigate to **Interface** $\rightarrow$ **UI Key Binding / Hardware Switch Actions**.
+6. Map each gesture directly to a native Zynthian CUIA or MIDI action:
+   - **Short Press:** `TOGGLE_AUDIO_PLAY` (or `TOGGLE_MIDI_PLAY`)
+   - **Bold Press:** `SCREEN_AUDIO_MIXER`
+   - **Long Press:** `ALL_NOTES_OFF` (Emergency MIDI Panic)
+7. Click **Save** and restart UI.
+
+This approach executes directly within Zynthian's event loop, requiring zero background daemons, zero external scripts, and zero additional memory overhead.
+
+---
+
+### 4.2 Alternative Approach: The `pisound-btn` Daemon (Multi-Click Gestures)
+
+If you require advanced multi-click gestures (such as double-click, triple-click, or 5-second poweroff), you can install the official Blokas `pisound-btn` daemon:
+
+```bash
+# Optional: Install Blokas suite if multi-click gestures are required
+curl https://blokas.io/apt-setup.sh | sh
+apt-get update
+apt-get install -y pisound-btn
+```
+
+#### Mapping via `/etc/pisound.conf`:
+The `pisound-btn` daemon invokes shell scripts on detected clicks. Zynthian's UI can be commanded over local UDP OSC port **`1370`** using `oscsend`:
+
+```text
+# /etc/pisound.conf - Zynthian Pisound Button Action Mappings
+CLICK_1       /usr/local/bin/zynthian_play.sh
+CLICK_2       /usr/local/bin/zynthian_mixer.sh
+CLICK_3       /usr/local/bin/zynthian_panic.sh
+HOLD_5S       /usr/local/bin/zynthian_poweroff.sh
+```
+
+Example integration scripts:
+```bash
+# /usr/local/bin/zynthian_play.sh (Toggle Play)
+oscsend 127.0.0.1 1370 /cuia/TOGGLE_AUDIO_PLAY
+
+# /usr/local/bin/zynthian_mixer.sh (Jump to Mixer)
+oscsend 127.0.0.1 1370 /cuia/SCREEN_AUDIO_MIXER
+
+# /usr/local/bin/zynthian_panic.sh (All Notes Off)
+oscsend 127.0.0.1 1370 /cuia/ALL_NOTES_OFF
+
+# /usr/local/bin/zynthian_poweroff.sh (Safe Shutdown)
+oscsend 127.0.0.1 1370 /cuia/POWER_OFF
+```
+*(Always verify available CUIA names in your Zynthian Webconf under **Interface -> UI Actions**).*
 
 ---
 
@@ -379,10 +374,10 @@ Run these commands over SSH to diagnose issues with audio, MIDI, or button state
 | Check Audio Input Devices | `arecord -l` | `card 1: pisound [pisound], device 0: PSND...` |
 | Check Raw MIDI Devices | `amidi -l` | `IO  hw:1,0  pisound MIDI PSND-XXXXX` |
 | Check Device Tree Overlay | `grep pisound /boot/firmware/config.txt` | `dtoverlay=pisound` |
-| Check JACK Service Status | `systemctl status jack2` | `Active: active (running)` |
-| Check Button Daemon Status | `systemctl status pisound-btn` | `Active: active (running)` |
+| Check Zynthian Service Status | `systemctl status zynthian` | `Active: active (running)` |
+| Check Button Daemon Status (Optional) | `systemctl status pisound-btn` | `Active: active (running)` (if installed) |
 | Test Button GPIO Pin State | `gpioget 0 17` | `1` (unpressed), `0` (pressed) |
-| Monitor JACK XRUNs | `journalctl -u jack2 -f` | Continuous stream with zero "xrun" warnings |
+| Monitor Real-Time DSP & XRUNs | `jack_cpu_load` (or `journalctl -u zynthian -f`) | Real-time CPU load and zero XRUN warnings |
 
 ---
 

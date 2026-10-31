@@ -2,7 +2,7 @@
 
 Comprehensive technical specification, web configuration guide, and Zynthian integration manual for the **SayoDevice 12-Key USB Macro Keyboard** (customized in a 9-key retro game controller layout).
 
-This document serves as the foundational guide for Stage 1 of the [`mc-zynthian`](../README.md) project, fulfilling the core architectural requirement: **enabling full autonomous navigation of the Zynthian UI via tactile physical controls, making the touchscreen an optional assist**.
+This document serves as the foundational guide for Stage 1 of the [`mc-zynthian`](../README.md) project, fulfilling the core architectural requirement: **enabling full autonomous navigation of the Zynthian UI via tactile physical controls, making the touchscreen an optional assist**. For full hardware specifications, bill of materials, and enclosure assembly, see [`docs/rpi-specs.md`](rpi-specs.md) and [`assets/case-assembly.stl`](../assets/case-assembly.stl).
 
 ---
 

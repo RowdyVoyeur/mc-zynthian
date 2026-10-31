@@ -178,6 +178,10 @@ jack_connect MC101_in:capture_3 effect_processor:input_1
 jack_connect MC101_in:capture_4 effect_processor:input_2
 ```
 
+> [!TIP]
+> **Automated Multi-Track Daemon & Service:**
+> For automated hotplug detection, startup daemonization, and complete systemd service integration, see the [Software Integration Blueprint (`docs/software-integration.md`)](software-integration.md#3-roland-mc-101-multi-channel-audio-daemon-scriptsmcee-audiosh). For deep ZEN-Core and drum parameter control via the custom native LV2 plugin, see [Section 2 of the Software Integration Blueprint](software-integration.md#2-roland-mc-101-lv2-plugin-architecture-mc101-ctrllv2).
+
 ---
 
 ## 3. Front Panel Controls, Modes & Knob Architecture

@@ -2,12 +2,15 @@
 
 Comprehensive operational manual, technical hardware reference, and System Exclusive (SysEx) implementation specification for the original **Korg nanoKONTROL** (Version 1, model year 2008).
 
-This document serves as the foundation for developing companion tools, headless Python configuration scripts, and native Zynthian control integrations for Stage 2 of the [`mc-zynthian`](../README.md) project.
+This document serves as the foundation for developing companion tools, headless Python configuration scripts, and native Zynthian control integrations for Stage 2 of the [`mc-zynthian`](../README.md) project. For the complete Python driver implementation (`scripts/kontroller.py`), 4-scene state machine, CUIA integration, and systemd service configuration, see the [Software Integration Blueprint (`docs/software-integration.md`)](software-integration.md#4-korg-nanokontrol-1-controller-driver-scriptskontrollerpy).
 
 > [!IMPORTANT]
 > **Strict Hardware Scope — nanoKONTROL Version 1 Only:**
 > This document pertains **exclusively** to the original first-generation **Korg nanoKONTROL (v1)** featuring **9 channel strips, 9 knobs, 9 faders, 18 assignable buttons, 6 transport buttons, and 4 onboard hardware scenes**.
 > It does **not** cover the nanoKONTROL2 (which reduced channel strips to 8 and eliminated internal scenes) or the nanoKONTROL Studio (Bluetooth/jogwheel model). All physical layouts, memory offsets, and SysEx formats documented here are strictly specific to Version 1.
+>
+> **LED Hardware Operation (v1 vs v2):**
+> On the nanoKONTROL v1, all button LEDs are **strictly local hardware indicators** tied directly to the physical switch state. Unlike the nanoKONTROL2, **Version 1 does NOT accept incoming host MIDI or CC feedback to control LEDs**. Any software driver must recognize this hardware characteristic.
 
 ---
 
@@ -507,7 +510,7 @@ When performing alongside the Roland MC-101 (leveraging [`docs/mc101-guide.md`](
 #### 1. Hardware Fails to Power On
 - **Symptom**: No Scene LEDs illuminate when plugging in the USB cable.
 - **Cause**: Inadequate power from an unpowered USB hub or degraded USB Mini-B cable.
-- **Solution**: Connect directly to one of the Raspberry Pi 4's blue USB 3.0 ports, or use a powered USB hub. Verify the USB cable by testing continuity.
+- **Solution**: Connect directly to any Raspberry Pi 4 USB port, or use a powered USB hub. Verify the USB cable by testing continuity.
 
 #### 2. Buttons "Stuck" On or Behaving Errantly
 - **Symptom**: Pressing a button leaves its parameter on, requiring a second press to release.
