@@ -9,6 +9,7 @@ This document serves as the operational foundation for building software editors
 3. **Roland MC-101 MIDI Implementation Chart (Ver. 1.60+)**: Official transmitted and recognized MIDI messages, CC mappings, Program Change rules, and Realtime sync behavior.
 4. **[Roland MC-101 Shortcuts, Tips & Tricks](https://sites.google.com/view/rolandmc101/home)**: Community-curated operational database covering undocumented workflow shortcuts, sound/PCM organization, Looper memory management, and MIDI routing tricks.
 5. **Hardware Probing & SysEx Research ([`mc101-sysex.md`](mc101-sysex.md))**: Internal memory architecture, Slot 17 working buffer mechanics, and SysEx vs. MIDI performance boundaries.
+6. **LinuxMusicians & mc101-pisound Research ([LinuxMusicians Thread #27111](https://linuxmusicians.com/viewtopic.php?t=27111) & [`RowdyVoyeur/mc101-pisound`](https://github.com/RowdyVoyeur/mc101-pisound))**: Empirical methodology for operating the MC-101 in 10-out / 4-in `VENDOR` mode on Linux / Raspberry Pi / Patchbox OS / Zynthian without proprietary drivers, utilizing `alsa_in` / `alsa_out` channel allocation and JACK patching.
 
 ---
 
@@ -118,12 +119,64 @@ Configured in `[SHIFT] + [FILTER]` (UTILITY) $\rightarrow$ `SYSTEM` $\rightarrow
    - Plug-and-play without drivers on iOS, Android, Linux (Zynthian), macOS, and Windows.
    - Provides **Stereo USB Audio In/Out (2-in / 2-out)** and **USB MIDI In/Out**.
 2. **`VENDOR` (Dedicated Driver / AIRA Link Mode)**:
-   - Requires Roland drivers on macOS/Windows (or compatible ALSA quirks on Linux) or connection to a Roland MX-1.
+   - Officially intended for Roland drivers on macOS/Windows or connection to an AIRA MX-1 mixer.
+   - Under Linux, operates natively via standard ALSA USB audio drivers without proprietary software (see Section 2.3).
    - Provides **10-Channel USB Audio Output** (`Ch 1–2`: Master Mix Out; `Ch 3–4`: Track 1; `Ch 5–6`: Track 2; `Ch 7–8`: Track 3; `Ch 9–10`: Track 4) and **4-Channel USB Audio Input** (`Ch 1–2`: Mix Return; `Ch 3–4`: `PC IN`).
 - **USB Audio Mix Settings**:
   - `USBMix` (`PRE T-FX` vs. `POST T-FX`): Determines whether USB Mix In (Ch 1–2) is summed before or after Total Effects.
   - `D.USB Mixout` (`OFF`, `1–127`, Ver. 1.60): When set to `OFF`, the hardware `[VOLUME]` knob controls the USB MIX OUT level. When set to `1–127`, USB MIX OUT is fixed at that level independent of the `[VOLUME]` knob.
   - `MetPos` (`MIXOUT`, `PRE T-FX`, `POST T-FX`, Ver. 1.71): Controls whether the metronome click is routed only to analog `MIXOUT` (not sent over USB) or included in USB audio.
+
+### 2.3 Linux & Raspberry Pi Multi-Channel USB Architecture (`VENDOR` Mode without Drivers)
+
+While Roland officially states that `VENDOR` mode requires proprietary drivers (only released for Windows and macOS), the standard Linux ALSA kernel stack can drive the MC-101 in full `VENDOR` multi-track mode on a **Raspberry Pi 4 running Patchbox OS or Zynthian OS** without installing any custom kernel drivers.
+
+#### The Mandatory Channel Allocation Rule (Avoiding Initialization Errors)
+> [!IMPORTANT]
+> **Exact Channel Count Requirement:**
+> When opening the MC-101 in `VENDOR` mode under Linux, the hardware descriptor advertises an inflexible channel mask:
+> - **10 Output Channels (Capture into Host)**: Attempting to open fewer than 10 channels will cause ALSA initialization to fail with buffer/device channel errors. You must explicitly request **`-c 10`**.
+> - **4 Input Channels (Playback from Host into MC-101)**: Attempting to open fewer than 4 channels will similarly fail. You must explicitly request **`-c 4`**.
+
+#### Launching the Dual ALSA-JACK Bridge Daemons
+Use `alsa_in` and `alsa_out` to bridge the MC-101's hardware audio streams into the JACK audio graph alongside your primary soundcard (e.g., Pisound):
+
+```bash
+# Bridge 10 audio channels FROM MC-101 INTO JACK (Capture)
+alsa_in -j "MC101_in" -d hw:MC101,DEV=0 -r 44100 -p 64 -n 4 -c 10 &
+
+# Bridge 4 audio channels FROM JACK INTO MC-101 (Playback)
+alsa_out -j "MC101_out" -d hw:MC101,DEV=0 -r 44100 -p 64 -n 4 -c 4 &
+```
+
+#### Complete Channel Topography
+
+| JACK Port Name | Hardware Direction | MC-101 Channel | Signal Description | Control & Routing Behavior |
+|---|---|---|---|---|
+| `MC101_in:capture_1` / `_2` | MC-101 $\rightarrow$ Host | **Ch 1 + 2** | **Master Mix Out (L/R)** | Summed stereo mix post-Total Effects (Master MFX, Comp, EQ) |
+| `MC101_in:capture_3` / `_4` | MC-101 $\rightarrow$ Host | **Ch 3 + 4** | **Track 1 Direct Out (L/R)** | Isolated audio from Track 1 post-Track MFX/EQ, pre-Master FX |
+| `MC101_in:capture_5` / `_6` | MC-101 $\rightarrow$ Host | **Ch 5 + 6** | **Track 2 Direct Out (L/R)** | Isolated audio from Track 2 post-Track MFX/EQ, pre-Master FX |
+| `MC101_in:capture_7` / `_8` | MC-101 $\rightarrow$ Host | **Ch 7 + 8** | **Track 3 Direct Out (L/R)** | Isolated audio from Track 3 post-Track MFX/EQ, pre-Master FX |
+| `MC101_in:capture_9` / `_10`| MC-101 $\rightarrow$ Host | **Ch 9 + 10**| **Track 4 Direct Out (L/R)** | Isolated audio from Track 4 post-Track MFX/EQ, pre-Master FX |
+| `MC101_out:playback_1` / `_2`| Host $\rightarrow$ MC-101 | **Ch 1 + 2** | **Master In (Mix Return)** | **Bypasses internal controls**. Always active and routed directly into the master bus |
+| `MC101_out:playback_3` / `_4`| Host $\rightarrow$ MC-101 | **Ch 3 + 4** | **PC IN (Audio Insert)** | **Fully controllable**. Selectable L/R channels, route into `Audio Insert` on Tracks 1–4, and process with MFX |
+
+#### Practical JACK Routing Examples (`jack_connect`)
+
+```bash
+# 1. Route MC-101 Master Out directly to physical monitors/headphones (e.g., Pisound / System Out)
+jack_connect MC101_in:capture_1 system:playback_1
+jack_connect MC101_in:capture_2 system:playback_2
+
+# 2. Route external live audio (e.g. Pisound Line In or Zynthian synth) into MC-101 PC IN (Channels 3 & 4)
+# This allows processing external audio through MC-101 Track MFX via the Audio Insert feature!
+jack_connect system:capture_1 MC101_out:playback_3
+jack_connect system:capture_2 MC101_out:playback_4
+
+# 3. Route isolated MC-101 Track 1 audio into a Zynthian Effect Chain (e.g., Guitarix or MOD-UI)
+jack_connect MC101_in:capture_3 effect_processor:input_1
+jack_connect MC101_in:capture_4 effect_processor:input_2
+```
 
 ---
 
@@ -307,6 +360,64 @@ In `SEQ` mode, pressing a lit step pad (Tone track) or `[SHIFT] + [PAD]` (Drum t
 | `CC 84` | Portamento Control | No | Yes | Source note number |
 | `CC 91` | Reverb Send Level | No | Yes | Recordable as Motion if `Rx RevSend = ON` |
 | `CC 92` / `93` | Chorus / Delay Send Level | No | Yes | Chart lists `CC 92`; Track MIDI Motion lists `CC 93` |
+
+### 7.3 Pitch Bend, Aftertouch & Channel Mode Messages
+
+| Message / Controller | Status / CC | TX | RX | Operational Behavior |
+|---|---|---|---|---|
+| **Pitch Bend** | `0xEn` | No | **Yes** | Full pitch wheel deflection mapped to active Tone / Drum partials |
+| **Channel Aftertouch** | `0xDn` | No | **Yes** | Monophonic pressure routed to filter cutoff, vibrato, or volume |
+| **Polyphonic Aftertouch** | `0xAn` | No | **Yes** | Key-specific pressure mapped per note in compatible ZEN-Core tones |
+| **All Sound Off** | `CC 120` | No | **Yes** | Immediately mutes all sound generators and cuts envelope tails |
+| **Reset All Controllers** | `CC 121` | No | **Yes** | Resets Modulation, Pitch Bend, Expression, and Pedals to defaults |
+| **All Notes Off** | `CC 123` | No | **Yes** | Sends Note-Off to all sounding voices (preserves natural release tails) |
+| **Omni Mode Off / On** | `CC 124` / `125` | No | **Yes** | Switches channel recognition modes (Default: Mode 3 Omni Off, Poly) |
+| **Mono Mode / Poly Mode** | `CC 126` / `127` | No | **Yes** | Sets mono voice allocation or polyphonic voice allocation |
+
+### 7.4 System Real-Time & Clock Synchronization
+
+| Real-Time Message | Status Byte | TX | RX | Operational Details |
+|---|---|---|---|---|
+| **Timing Clock** | `0xF8` | **Yes** | **Yes** | 24 PPQN master sync. Transmits clock if `Sync Out = ON`; follows clock if `Sync Mode = SLAVE` or `AUTO` |
+| **Start** | `0xFA` | **Yes** | **Yes** | Starts playback from measure 1 of the active scene |
+| **Continue** | `0xFB` | No | **Yes** | Resumes playback from current playhead position without restarting measure 1 |
+| **Stop** | `0xFC` | **Yes** | **Yes** | Stops playback and sequencer clocks |
+
+### 7.5 Default 16 Drum Pad MIDI Note Layout (Reference: `rolandmc101.top/midi`)
+
+When controlling an MC-101 **DRUM track** from external pad controllers (such as Ableton Push 1 or Korg nanoKONTROL), the 16 physical drum pads correspond to the following MIDI note numbers by default:
+
+```
++---------------------------------------------------------------------------------------------------+
+| Upper Row (Pads 1–8):   [C#1 / 37] [D#1 / 39] [F#1 / 42] [A#1 / 46] [C#2 / 49] [D#2 / 51] [F#2 / 54] [G#2 / 56] |
+| Lower Row (Pads 9–16):  [C1  / 36] [D1  / 38] [F1  / 41] [A1  / 45] [C2  / 48] [D3  / 62] [D#3 / 63] [E3  / 64] |
++---------------------------------------------------------------------------------------------------+
+```
+
+- **Pads 9 & 1**: Bass Drum / Kick (`C1` / Note `36`) & Side Stick (`C#1` / Note `37`)
+- **Pads 10 & 2**: Acoustic Snare (`D1` / Note `38`) & Hand Clap (`D#1` / Note `39`)
+- **Pads 11 & 3**: Low Floor Tom (`F1` / Note `41`) & Closed Hi-Hat (`F#1` / Note `42`)
+- **Pads 12 & 4**: Low-Mid Tom (`A1` / Note `45`) & Open Hi-Hat (`A#1` / Note `46`)
+- **Pads 13 & 5**: Low Tom (`C2` / Note `48`) & Crash Cymbal 1 (`C#2` / Note `49`)
+- **Pad 6**: Ride Cymbal 1 (`D#2` / Note `51`)
+- **Pad 7**: Ride Bell (`F#2` / Note `54`)
+- **Pad 8**: Tambourine (`G#2` / Note `56`)
+- **Pads 14–16**: Extended Percussion / User Samples (`D3` / Note `62`, `D#3` / Note `63`, `E3` / Note `64`)
+
+### 7.6 System MIDI Configuration Checklist (`[SHIFT] + [FILTER]` $\rightarrow$ `SYSTEM` $\rightarrow$ `MIDI`)
+
+To ensure external controllers and sequencers can operate the MC-101 properly, verify the following system menu settings:
+
+| Parameter | Recommended Setting | Purpose / Impact |
+|---|---|---|
+| **`Control Rx`** | **`ON`** | **Mandatory** for switching Scenes via Program Change `0–127` on the Control Channel |
+| **`Control Channel`** | Default `16` (or `13–16`) | Sets the dedicated MIDI channel for Scenes and Scatter Pads |
+| **`Rx Scatter`** | **`ON`** | **Mandatory** for triggering Scatter Pads `1–16` via MIDI Notes `60–75` (`C4–D#5`) |
+| **`MIDI Rx Auto Ch`** | Match Master Controller (e.g., `Ch 16`) | Redirects incoming notes to the selected track; required to play the onboard **Arpeggiator** |
+| **`Sync Mode`** | `AUTO` or `SLAVE` | Locks MC-101 tempo to external incoming MIDI clock (e.g., from Zynthian) |
+| **`Sync Out`** | `ON` | Transmits 24 PPQN MIDI Clock to sync downstream synthesizers |
+| **`Rx PC` (Per Track)**| `ON` | Allows external Program Changes `0–15` to switch clips on that track |
+| **`Rx Motion Toggles`**| `ON` (`Volume`, `Pan`, `ModWheel`, `Hold-1`, `RevSend`) | Enables live recording of external CC motion into clip steps |
 
 ---
 

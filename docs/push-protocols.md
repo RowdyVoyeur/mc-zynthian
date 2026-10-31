@@ -14,6 +14,7 @@ This document consolidates and cross-verifies all hardware protocols, System Exc
 8. **DrivenByMoss Documentation & Push 1 Implementation ([`git-moss/DrivenByMoss-Documentation`](https://github.com/git-moss/DrivenByMoss-Documentation))**: Jürgen Moßgraber's comprehensive multi-DAW control surface architecture for Push 1, providing proven UI/UX patterns for mapping Push 1's 4x68 character display and 8x8 pad matrix to non-Ableton hosts (session view, step sequencers, mixer banks, and deep parameter pages).
 9. **Zynthian Community Push 1 Driver Discussion ([`discourse.zynthian.org/t/driver-for-ableton-push-1-first-steps/12166`](https://discourse.zynthian.org/t/driver-for-ableton-push-1-first-steps/12166))**: Community and core developer (`tunagenes`, `JBrumby`, `jofemodo`, `riban`) architectural blueprint covering `zynthian_ctrldev` inheritance, Python thread jitter limitations during live pad playing, and the `midiproc` / JACK real-time MIDI routing architecture.
 10. **Zynthian Core Architecture (`zynthian-ui` / `zyngine` / `zyngui`)**: Official Zynthian Oram/Vangelis API specifications for `zynthian_ctrldev_base`, `zynpad` (`zynseq`), `zynmixer`, `state_manager`, Chain Manager, and Callable UI Actions (`CUIA`).
+11. **Ableton Push 1 Hardware Guide ([`push-guide.md`](push-guide.md))**: Full operational reference manual covering all hardware features, pad modes (Drum Rack 3-zone, Melodic Isomorphic, Melodic Step Sequencer), mixer modes, hidden shortcuts, pad calibration, and physical boundaries.
 
 ---
 
@@ -579,13 +580,13 @@ Replicates Ableton Push 1's renowned **64-pad Isometric Keyboard Layout**:
   - **`[Octave Up]` / `[Octave Down]` (`CC 55` / `CC 54`)**: Shifts the pad grid base octave (`-4` to `+4`), displaying the current note range (`C2 - G6`) on the LCD.
   - **Touchstrip**: Acts as a spring-loaded **Pitch Bend** ribbon (default), **Modulation Wheel (`CC 1`)** fader (toggle with `[Shift] + Touchstrip`), or **MC-101 Scatter Pad** ribbon!
 - **Stage 2/3 MC-101 Deep Integration (`[User]` Button `CC 59`)**:
-  - Pressing `[User]` toggles the Push 1 into **MC-101 Groovebox Master Mode** (leveraging [`docs/mc101/mc101-sysex.md`](../mc101/mc101-sysex.md) and [`docs/mc101/mc101-operation.md`](../mc101/mc101-operation.md)), where the 4x4 quadrants trigger MC-101 Clips, Scatter Pads (Ch 13 Notes `60..75`), and 4-Partial ZEN-Core / 90-MFX SysEx parameters on the Push LCD!
+  - Pressing `[User]` toggles the Push 1 into **MC-101 Groovebox Master Mode** (leveraging [`mc101-sysex.md`](mc101-sysex.md) and [`mc101-guide.md`](mc101-guide.md)), where the 4x4 quadrants trigger MC-101 Clips, Scatter Pads (Ch 13 Notes `60..75`), and 4-Partial ZEN-Core / 90-MFX SysEx parameters on the Push LCD!
 
 ---
 
 ## 7. Quick-Reference Implementation Checklist (`scripts/pushy.py`)
 
-The executable Python foundation in [`scripts/pushy.py`](../../scripts/pushy.py) implements:
+The executable Python foundation in [`scripts/pushy.py`](../scripts/pushy.py) implements:
 1. **Complete Hardware Constants**: All Push 1 CC numbers, Note numbers, SysEx headers, LCD glyph constants, Bi-LED/Monochrome/RGB palettes, and 34 musical scale interval tables.
 2. **Double-Buffered 4x68 LCD Engine (`Push1Display`)**: Automatic 8-column (`8x8` chars + 4 separators) and 4-column (`4x17` chars) formatting, custom glyph bargraph/pan rendering (`render_bar`, `render_pan`), temporary toast overlays (for Master/Tempo touch), and dirty-line diffing so only changed lines are transmitted over USB MIDI.
 3. **64-Pad Matrix & Isometric Scale Engine (`Push1PadMatrix`)**: Full 8x8 state cache (preventing redundant LED MIDI output), In-Key and Chromatic isometric coordinate-to-note translation, simultaneous multi-pad pitch highlighting, Drum 4x4 + 32-step sequencer split view, and Session 8x8 clip launcher view.
