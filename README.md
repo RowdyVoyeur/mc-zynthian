@@ -5,18 +5,20 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
 
 ---
 
-## Stage 1: Standalone DIY Zynthian
+## Project Roadmap & Task List
+
+### Stage 1: Standalone DIY Zynthian
 **Hardware:** Raspberry Pi 4 + Pisound + Macro Keyboard + Touchscreen (see [Hardware Specs & Enclosure Manual (`docs/rpi-specs.md`)](docs/rpi-specs.md) and 3D assembly model [`assets/case-assembly.stl`](assets/case-assembly.stl))
 **Goal:** Establish a rock-solid, ultra-low-latency foundation that can be fully operated without external MIDI controllers. Refer to the [Zynthian Vangelis Guide (`docs/zynthian-guide.md`)](docs/zynthian-guide.md) for OS architecture, Webconf setup, and low-latency tuning, and the [Pisound Guide (`docs/pisound-guide.md`)](docs/pisound-guide.md) for soundcard configuration and The Button operation.
 
-- [ ] **OS Deployment:** Install and configure ZynthianOS Vangelis on the Raspberry Pi 4 (see [`docs/zynthian-guide.md`](docs/zynthian-guide.md) and [`docs/rpi-specs.md`](docs/rpi-specs.md)).
-- [ ] **Pisound Audio I/O:** Configure Pisound as the primary audio interface (see [`docs/pisound-guide.md`](docs/pisound-guide.md)). Achieve ultra-low latency audio matching or exceeding previous setup benchmarks.
+- [x] **OS Deployment:** Install and configure ZynthianOS Vangelis on the Raspberry Pi 4 (see [`docs/zynthian-guide.md`](docs/zynthian-guide.md) and [`docs/rpi-specs.md`](docs/rpi-specs.md)).
+- [x] **Display Calibration:** Ensure the touchscreen works reliably to interact with the Zynthian UI (see native timings in [`docs/rpi-specs.md`](docs/rpi-specs.md)).
+- [ ] **Pisound Audio I/O:** Configure Pisound as the primary audio interface (see [`docs/pisound-guide.md`](docs/pisound-guide.md)). Achieve ultra-low latency audio matching or exceeding previous setup benchmarks. *(Audio Out verified; Audio In pending test)*
 - [ ] **Pisound MIDI I/O:** Ensure hardware MIDI IN and OUT ports work flawlessly.
-- [ ] **Display Calibration:** Ensure the touchscreen works reliably to interact with the Zynthian UI (see native timings in [`docs/rpi-specs.md`](docs/rpi-specs.md)).
-- [ ] **Macro Keyboard Navigation:** Map the macro keyboard to be the primary navigation tool (see [`docs/macrokeyboard-guide.md`](docs/macrokeyboard-guide.md)). (Requirement: The RPi must be fully operable autonomously via this keyboard, with the touchscreen acting only as an optional assist).
+- [ ] **Macro Keyboard Navigation:** Map the macro keyboard to be the primary navigation tool (see [`docs/macrokeyboard-guide.md`](docs/macrokeyboard-guide.md)). (Requirement: The RPi must be fully operable autonomously via this keyboard, with the touchscreen acting only as an optional assist). *(Hardware detected & working; keybindings pending)*
 - [ ] **Pisound Button Mapping:** Enable the physical button on the Pisound to execute context-specific tasks (via native Webconf switch mapping or `pisound-btn` daemon and CUIA, see [`docs/pisound-guide.md`](docs/pisound-guide.md)), such as changing audio routing on the fly.
 
-## Stage 2: Enhanced Ecosystem
+### Stage 2: Enhanced Ecosystem
 **Hardware:** Stage 1 + Roland MC-101 + Korg nanoKONTROL
 **Goal:** Integrate external synthesizers and baseline physical control, achieving seamless audio/MIDI sync and deep hardware editing. Refer to the [Software Integration & Plugin Blueprint (`docs/software-integration.md`)](docs/software-integration.md) for the `mc101-ctrl.lv2` plugin, `mcee-audio.sh` multi-track audio daemon, and `scripts/kontroller.py` driver.
 
@@ -27,10 +29,57 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
 - [ ] **Zen-Core Editing Bridge:** Create a native LV2 plugin (`mc101-ctrl.lv2`) to edit MC-101 Zen-Core parameters directly from the Zynthian UI (see [`docs/software-integration.md`](docs/software-integration.md) and [`docs/mc101-sysex.md`](docs/mc101-sysex.md)).
 - [ ] **Drum Track Deep Editing:** Expand the editing bridge to manipulate MC-101 drum track parameters to the furthest extent the hardware allows (see [`docs/software-integration.md`](docs/software-integration.md)).
 
-## Stage 3: Full-Fledged Ecosystem
+### Stage 3: Full-Fledged Ecosystem
 **Hardware:** Stage 2 + Ableton Push 1 + Teensy 4.1
 **Goal:** Introduce advanced "eyes-off-the-Pi" operation and integrate a custom hardware synth voice.
 
 - [ ] **Push 1 Deep Integration:** Configure the Ableton Push 1 to control Zynthian deeply (via `pushy.py`, see [`docs/push-guide.md`](docs/push-guide.md) and [`docs/software-integration.md`](docs/software-integration.md)), ensuring the entire ecosystem can be navigated and played almost without looking at the Pi's screen.
 - [ ] **Teensy 4.1 Synthesizer / Co-Processor:** Select and flash the Teensy 4.1 firmware (e.g., Headless Mini-Teensy-Synth or Euclidean MIDI Co-Processor; see [`docs/teensy-guide.md`](docs/teensy-guide.md)).
 - [ ] **Teensy Integration:** Connect and configure the Teensy via USB so it can be controlled by Zynthian's sequencers and routed through its audio matrix (see [`docs/teensy-guide.md`](docs/teensy-guide.md)).
+
+---
+
+## Step-by-Step Configuration Guide
+
+### Stage 1: Initial Setup
+
+#### Step 1: Flashing the OS Image
+1. Downloaded `zynthianos-last-stable.img.xz` from `https://os.zynthian.org/`
+2. Opened Raspberry Pi Imager and used custom OS `zynthianos-last-stable.img.xz`
+3. Selected the SD card as storage device
+4. Selected write
+5. After 20 minutes it was flashed onto the SD card
+
+#### Step 2: First Boot & Initial Hardware Setup
+1. **Boot Screen Observations & Initial Error:**
+   - On first boot, the screen displayed:
+     - `IP: Audio/MIDI (1) to (4)`
+     - `IP: 192.168.x.x Audio/MIDI (5) to (57)` (increasing counter)
+     - An `Error` message was presented on the loading screen (soundcard unconfigured on fresh image).
+     - Eventually the IP changed to `10.42.0.xxx`, and the error remained.
+2. **Accessing Webconf:**
+   - Connected an Ethernet cable.
+   - Opened a web browser and navigated to `http://10.42.0.xxx`.
+   - Logged in with password: `opensynth`.
+3. **Audio Configuration:**
+   - Navigated to the **Hardware** menu $\to$ **Audio**.
+   - Soundcard: **Pisound**.
+   - Soundcard Device: **Pisound**.
+   - Sample Rate: **48000**.
+   - Buffer Size: **64**.
+   - Number of Buffers: **2**.
+   - Clicked **Save**.
+   - The errors on the display disappeared, and Webconf displayed: *"Zynthian needs to reboot to apply your changes!"*
+4. **Kit & Display Configuration (before rebooting):**
+   - Navigated to **Hardware** $\to$ **Kit** and selected **Custom**.
+   - Navigated to **Hardware** $\to$ **Display**, selected **Waveshare 5 HDMI+USB**, and set Rotation to **None**.
+   - Clicked **Save** and rebooted.
+5. **Post-Reboot Verification:**
+   - System booted cleanly without errors.
+   - **Audio Out:** Verified working.
+   - **Touchscreen:** Verified working.
+   - **Macro Keyboard:** Verified detected and working.
+
+#### Next Steps:
+- Configure macro keyboard key bindings in Webconf.
+- Verify Pisound Audio In, MIDI In, and MIDI Out.

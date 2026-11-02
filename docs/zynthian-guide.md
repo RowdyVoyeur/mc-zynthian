@@ -87,7 +87,7 @@ To achieve rock-solid performance, deploy the official stable Vangelis release i
 
 - **Hostname:** `zynthian.local` (resolves automatically via mDNS / Avahi)
 - **Webconf Dashboard:** `http://zynthian.local` (or `http://<IP-ADDRESS>`)
-- **Webconf Default Password:** `raspberry`
+- **Webconf Default Password:** `opensynth` (legacy releases used `raspberry`)
 - **SSH Terminal Access:**
   ```bash
   ssh root@zynthian.local
@@ -116,7 +116,7 @@ Because `mc-zynthian` is a custom DIY build rather than an official Zynthian V4 
 ### 3.1 Step-by-Step Webconf Setup
 
 1. Open your browser and navigate to `http://zynthian.local`.
-2. Authenticate using the password `raspberry`.
+2. Authenticate using the password `opensynth`.
 3. Configure the hardware subsystems as outlined below:
 
 #### A. Hardware -> Kit
