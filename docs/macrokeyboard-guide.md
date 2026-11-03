@@ -1,6 +1,6 @@
-# SayoDevice 12-Key Macro Keyboard: Zynthian Controller Guide & Reference Manual
+# SayoDevice 2x6F RGB Macro Keyboard: Zynthian Controller Guide & Reference Manual
 
-Comprehensive technical specification, web configuration guide, and Zynthian integration manual for the **SayoDevice 12-Key USB Macro Keyboard** (customized in a 9-key retro game controller layout).
+Comprehensive technical specification, web configuration guide, and Zynthian integration manual for the **SayoDevice 2x6F RGB 12-Key USB Macro Keyboard** (customized in a 9-key retro game controller layout).
 
 This document serves as the foundational guide for Stage 1 of the [`mc-zynthian`](../README.md) project, fulfilling the core architectural requirement: **enabling full autonomous navigation of the Zynthian UI via tactile physical controls, making the touchscreen an optional assist**. For full hardware specifications, bill of materials, and enclosure assembly, see [`docs/rpi-specs.md`](rpi-specs.md) and [`assets/case-assembly.stl`](../assets/case-assembly.stl).
 
@@ -8,17 +8,17 @@ This document serves as the foundational guide for Stage 1 of the [`mc-zynthian`
 
 ## 1. Hardware Architecture & Physical Matrix Layout
 
-The macro controller is based on the **SayoDevice 12-Key programmable USB keypad** (Sayobot / WebHID ecosystem). 
+The macro controller is based on the **SayoDevice 2x6F RGB 12-Key programmable USB keypad** (Sayobot / WebHID ecosystem). 
 
 The underlying circuit board contains a **$2 \times 6$ matrix (2 rows of 6 keys)** of 12 mechanical key switches with individual per-key RGB backlighting. The custom physical enclosure deliberately exposes **9 functional keys** by masking/disabling 3 keys (Keys 1, 3, and 10), creating a classic retro game console layout with a cross D-pad on the left and action/system buttons on the right:
 
 ```
 +---------------------------------------------------------------------------------------------------------------------------------------+
-|  [ Key 1: HIDDEN ]   [ Key 2: UP ]       [ Key 3: HIDDEN ]   [ Key 4: SHIFT ]       [ Key 5: A ]            [ Key 6: B ]              | (Row 1)
-|  (Internal/Masked)   (D-Pad Up)          (Internal/Masked)   (Layer Modifier)       (Action A / Select)     (Action B / Back)         |
+|  [ Key 1: HIDDEN ]   [ Key 2: UP ]       [ Key 3: HIDDEN ]   [ Key 4: Fn ]          [ Key 5: A ]            [ Key 6: B ]              | (Row 1)
+|  (Internal/Masked)   (D-Pad Up)          (Internal/Masked)   (Hold for Layer 1)     (Action A / Select)     (Action B / Back)         |
 |                                                                                                                                       |
-|  [ Key 7: LEFT ]     [ Key 8: DOWN ]     [ Key 9: RIGHT ]    [ Key 10: HIDDEN ]     [ Key 11: SELECT ]      [ Key 12: START ]         | (Row 2)
-|  (D-Pad Left)        (D-Pad Down)        (D-Pad Right)       (Internal/Masked)      (Screen / Menu / Enter) (Transport / Spacebar)    |
+|  [ Key 7: LEFT ]     [ Key 8: DOWN ]     [ Key 9: RIGHT ]    [ Key 10: HIDDEN ]     [ Key 11: C ]           [ Key 12: D ]             | (Row 2)
+|  (D-Pad Left)        (D-Pad Down)        (D-Pad Right)       (Internal/Masked)      (Switch Chain)          (Transport Play/Stop)     |
 +---------------------------------------------------------------------------------------------------------------------------------------+
 | <----------------- LEFT CLUSTER: CROSS D-PAD -----------------> | <------------------ RIGHT CLUSTER: RETRO CONSOLE -----------------> |
 ```
@@ -28,24 +28,24 @@ The underlying circuit board contains a **$2 \times 6$ matrix (2 rows of 6 keys)
 Numbering from **Left to Right across Row 1, then Left to Right across Row 2**:
 
 #### Row 1 (Keys 1 through 6)
-| Key # | Position | Hardware Status | Faceplate Label | Primary Role | Default Keycode Example |
-|---|---|---|---|---|---|
-| **Key 1** | Row 1, Col 1 | **Hidden / Disabled** | — | Top-Left Corner Mask | Disabled (`No Key`) |
-| **Key 2** | Row 1, Col 2 | **Exposed** | `UP` | D-Pad Up | `Key: Up Arrow` |
-| **Key 3** | Row 1, Col 3 | **Hidden / Disabled** | — | Top-Right Corner Mask | Disabled (`No Key`) |
-| **Key 4** | Row 1, Col 4 | **Exposed** | `SHIFT` | Layer Modifier (Fn) | SayoDevice `Layer Switch (Fn)` |
-| **Key 5** | Row 1, Col 5 | **Exposed** | `A` | Action A / Confirm | `Key: Enter` / `Return` |
-| **Key 6** | Row 1, Col 6 | **Exposed** | `B` | Action B / Cancel | `Key: Escape` / `Backspace` |
+| Key # | Position | Hardware Status | Physical Cluster | Primary Role |
+|---|---|---|---|---|
+| **Key 1** | Row 1, Col 1 | **Hidden / Masked** | Top-Left Corner | Unexposed / Disabled |
+| **Key 2** | Row 1, Col 2 | **Exposed** | D-Pad Top | Directional Up |
+| **Key 3** | Row 1, Col 3 | **Hidden / Masked** | Top-Right Corner | Unexposed / Disabled |
+| **Key 4** | Row 1, Col 4 | **Exposed** | Center Modifier | Layer Switch (`Fn`) |
+| **Key 5** | Row 1, Col 5 | **Exposed** | Action Cluster | Primary Action A |
+| **Key 6** | Row 1, Col 6 | **Exposed** | Action Cluster | Secondary Action B |
 
 #### Row 2 (Keys 7 through 12)
-| Key # | Position | Hardware Status | Faceplate Label | Primary Role | Default Keycode Example |
-|---|---|---|---|---|---|
-| **Key 7** | Row 2, Col 1 | **Exposed** | `LEFT` | D-Pad Left | `Key: Left Arrow` |
-| **Key 8** | Row 2, Col 2 | **Exposed** | `DOWN` | D-Pad Down | `Key: Down Arrow` |
-| **Key 9** | Row 2, Col 3 | **Exposed** | `RIGHT` | D-Pad Right | `Key: Right Arrow` |
-| **Key 10**| Row 2, Col 4 | **Hidden / Disabled** | — | Bottom-Left System Mask | Disabled (`No Key`) |
-| **Key 11**| Row 2, Col 5 | **Exposed** | `SELECT` | System Screen / Confirm | `Key: Tab` (or `Enter`) |
-| **Key 12**| Row 2, Col 6 | **Exposed** | `START` | Master Transport | `Key: Space` (Play/Stop) |
+| Key # | Position | Hardware Status | Physical Cluster | Primary Role |
+|---|---|---|---|---|
+| **Key 7** | Row 2, Col 1 | **Exposed** | D-Pad Left | Directional Left |
+| **Key 8** | Row 2, Col 2 | **Exposed** | D-Pad Bottom | Directional Down |
+| **Key 9** | Row 2, Col 3 | **Exposed** | D-Pad Right | Directional Right |
+| **Key 10**| Row 2, Col 4 | **Hidden / Masked** | Bottom-Center | Unexposed / Disabled |
+| **Key 11**| Row 2, Col 5 | **Exposed** | Action Cluster | Tertiary Action C |
+| **Key 12**| Row 2, Col 6 | **Exposed** | Action Cluster | Quaternary Action D |
 
 ### 1.2 Full Mapping Flexibility
 > [!NOTE]
@@ -71,87 +71,63 @@ Numbering from **Left to Right across Row 1, then Left to Right across Row 2**:
 Because the hardware contains no onboard LCD screen or physical configuration DIP switches, all key assignments, layers, and RGB backlighting are configured using the official browser-based WebHID portal.
 
 ### 2.1 Essential Configuration Links
-- **Official WebHID Configuration App**: [sayodevice.com](https://sayodevice.com/)
+- **Modern WebHID Configuration App**: [app.sayodevice.com](https://app.sayodevice.com/)
+- **Legacy WebHID Portal (for initial connection & firmware update)**: [old.sayodevice.com/device](https://old.sayodevice.com/device)
 - **Official Documentation**: [SayoDevice WebHID Documentation](https://manual.sayodevice.com/#/en/docs/std/web_hid/README)
 - **Source Repository & Firmware**: [Sayobot/SayoDevice_manual GitHub](https://github.com/Sayobot/SayoDevice_manual)
 
-### 2.2 System & Browser Requirements
+### 2.2 System & Linux Mint Permissions Setup
 > [!IMPORTANT]
-> **Browser Compatibility:**
+> **Browser Compatibility & Linux udev Rule:**
 > The SayoDevice configurator utilizes the **WebHID API**, which allows direct low-level USB communication from the browser without installing desktop software.
-> - **Supported Browsers**: Google Chrome, Microsoft Edge, Brave, Opera, or any modern Chromium-based browser.
-> - **Unsupported**: Mozilla Firefox and Apple Safari do not natively support WebHID and will not connect to the device.
+> - **Supported Browsers**: Google Chrome, Microsoft Edge, Brave, Opera, or any modern Chromium-based browser (Firefox and Safari do not support WebHID).
+> - **Linux Mint / Ubuntu Permissions**: Under Linux, raw USB HID interfaces (`/dev/hidraw*`) require root permissions by default. When clicking "Connect" in Chrome, the browser fails silently unless a udev rule is applied:
+>   ```bash
+>   echo 'KERNEL=="hidraw*", SUBSYSTEM=="hidraw", MODE="0666"' | sudo tee /etc/udev/rules.d/99-sayodevice.rules
+>   sudo udevadm control --reload-rules && sudo udevadm trigger
+>   ```
+>   After running these commands, unplug and reconnect the keypad's USB cable.
 
 ### 2.3 Step-by-Step Programming Walkthrough
 
 ```
 +---------------------------------------------------------------------------------------------------+
-| 1. Connect Device  ---> 2. Open sayodevice.com ---> 3. Pair WebHID Window ---> 4. Map Keys/Layers|
+| 1. Connect Device  ---> 2. Apply Linux udev  ---> 3. Upgrade Firmware  ---> 4. Map Keys/Layers    |
+|    (Linux Mint PC)         (/dev/hidraw*)            (old.sayodevice)          (app.sayodevice)   |
 |                                                                                     |             |
-| 5. Unplug & Deploy <--- 6. Reconnect to Pi     <--- 5. Save to Flash/EEPROM <-------+             |
+| 6. Deploy to Pi    <--- 5. Save to EEPROM    <--------------------------------------+             |
 +---------------------------------------------------------------------------------------------------+
 ```
 
 1. **Connect to Programming Machine**:
-   - Plug the macro keyboard into your PC/Mac workstation using a USB data cable.
-2. **Access the Configurator**:
-   - Launch Google Chrome or Microsoft Edge and navigate to `https://sayodevice.com/`.
-3. **Establish WebHID Handshake**:
-   - Click the green **"Search Sayo-Device"** or **"Connect"** button on the homepage.
-   - A browser security popup will display detected USB HID devices.
-   - Select your device (typically listed as `SayoDevice` or `SayoDevice O3C/12K`) and click **"Connect"**.
-   - The web interface will read the hardware's internal memory and display the current key mapping matrix.
+   - Plug the SayoDevice 2x6F RGB into your Linux workstation using a USB data cable.
+2. **Initial Firmware Upgrade**:
+   - If using stock firmware, open `https://old.sayodevice.com/device` in Google Chrome and upgrade the device firmware.
+3. **Open Modern Configurator**:
+   - Navigate to `https://app.sayodevice.com/` and connect to the SayoDevice 2x6F RGB.
 4. **Configure Key Codes & Layers**:
-   - Select each physical key on the virtual pad diagram.
-   - Assign the corresponding Standard Keyboard Scan Codes (see Section 3 for recommended Zynthian mappings).
-   - Configure **Layer 0** (Default) and **Layer 1** (Shifted).
-   - Set the `SHIFT` physical button behavior to **`Momentary Layer Switch (Fn)`** or **`Layer Toggle`**.
-5. **Configure RGB Retroillumination**:
-   - Open the **Lighting** tab.
-   - Set color palettes for each key to visually identify functional clusters (see Section 4).
-6. **Commit Configuration to Hardware**:
-   - Click **"Save"** or **"Write to Device"**.
-   - Wait for the confirmation prompt indicating the EEPROM write has succeeded.
+   - Map **Layer 0** (Default) and **Layer 1** (Shifted / Fn held) as detailed in Section 3.
+5. **Commit Configuration to Hardware**:
+   - Click **Save** / **Write to Device**. The mappings are committed to internal non-volatile EEPROM.
    - Disconnect the keyboard. The device is now permanently configured and ready for Zynthian!
 
 ---
 
-## 3. Dual-Layer Zynthian Navigation Scheme
+## 3. Layer Architecture & Keystroke Generation
 
-To fulfill the project goal of operating Zynthian completely without a touchscreen or external MIDI controller, the 9 exposed keys are mapped across two operational layers using the `SHIFT` modifier:
+The SayoDevice 2x6F RGB operates as a hardware-level USB HID keyboard encoder with internal multi-layer mapping capabilities:
 
-### 3.1 Layer 0: Primary UI Navigation & Transport (Default Mode)
-Active during standard performance and menu navigation:
+### 3.1 Hardware Layer Modes
+- **Layer 0 (Base Layer):** The default operational layer active when no modifier key is engaged. Every key sends its assigned primary standard HID scan code.
+- **Layer 1 (Secondary Layer):** Activated via a dedicated modifier key. In the web configurator, any physical switch can be designated as a **Layer Switch (`Fn`)**:
+  - **Momentary (Press & Hold):** Layer 1 is only active while the modifier key is held down; releasing it immediately returns the keypad to Layer 0.
+  - **Toggle (Latch):** Pressing the modifier toggles between Layer 0 and Layer 1.
+- **EEPROM Storage:** All layer assignments are written directly to internal flash memory. The device requires no host background software or drivers; when plugged into any host OS (Linux, macOS, Windows), it enumerates as a standard USB composite keyboard.
 
-| Key # | Faceplate Label | Physical Role | Recommended Keycode | Alternative Options | Zynthian UI Function | CUIA Command |
-|---|---|---|---|---|---|---|
-| **Key 2** | `UP` | D-Pad Top | `Key: Up Arrow` | `Key: Page Up` / `+` | Move selection up in lists | `ARROW_UP` |
-| **Key 8** | `DOWN` | D-Pad Bottom | `Key: Down Arrow` | `Key: Page Down` / `-`| Move selection down in lists | `ARROW_DOWN` |
-| **Key 7** | `LEFT` | D-Pad Left | `Key: Left Arrow` | `Key: [` / `,` | Navigate left / previous item | `ARROW_LEFT` |
-| **Key 9** | `RIGHT` | D-Pad Right | `Key: Right Arrow` | `Key: ]` / `.` | Navigate right / next item | `ARROW_RIGHT` |
-| **Key 5** | `A` | Action A | `Key: Enter` / `Return` | `Key: Z` / `Ctrl+Enter`| **Select / Confirm / Open Menu** | `SELECT` |
-| **Key 6** | `B` | Action B | `Key: Escape` / `Backspace` | `Key: X` / `Back` | **Back / Cancel / Exit Menu** | `BACK` |
-| **Key 11**| `SELECT` | System Select | `Key: Tab` / `F1` | `Key: Enter` / `F3` | Cycle active synth chain / switch layer | `SWITCH_CHAIN` |
-| **Key 12**| `START` | System Start | `Key: Space` | `Key: Enter` / `P` | **Transport Play / Stop Toggle** | `TOGGLE_PLAY` |
-| **Key 4** | `SHIFT` | Layer Modifier | SayoDevice `Fn` | `Left Shift` / `Layer 1`| Hold to access Layer 1 | — |
-| **1, 3, 10** | *HIDDEN* | Unexposed PCB | `Disabled` (`None`) | — | Unassigned / No keystroke | — |
-
----
-
-### 3.2 Layer 1: Deep Editing, Mixer & Sound Management (Shifted Mode)
-Activated while holding **`Key 4 (SHIFT)`**:
-
-| Shifted Combination | Recommended Keycode | Alternative Options | Zynthian UI Function | CUIA Command |
-|---|---|---|---|---|
-| **`SHIFT` + `Key 2 (UP)`** | `Key: Page Up` | `Key: +` / Volume Up | Coarse parameter increment / Fast scroll | `PAGE_UP` |
-| **`SHIFT` + `Key 8 (DOWN)`** | `Key: Page Down` | `Key: -` / Volume Down| Coarse parameter decrement / Fast scroll | `PAGE_DOWN` |
-| **`SHIFT` + `Key 7 (LEFT)`** | `Key: [` (Bracket Left) | `Key: Home` / Prev Bank| Load **Previous Preset / Snapshot** | `PREV_SNAPSHOT` |
-| **`SHIFT` + `Key 9 (RIGHT)`** | `Key: ]` (Bracket Right)| `Key: End` / Next Bank | Load **Next Preset / Snapshot** | `NEXT_SNAPSHOT` |
-| **`SHIFT` + `Key 5 (A)`** | `Key: Shift + Enter` | `Key: F10` / Menu Key | **Bold / Long Click** (Context Menu) | `BOLD_SELECT` |
-| **`SHIFT` + `Key 6 (B)`** | `Key: Delete` / `Ctrl+Esc`| `Key: F12` | **MIDI Panic / All Notes Off** | `ALL_NOTES_OFF` |
-| **`SHIFT` + `Key 11 (SELECT)`**| `Key: F2` | `Key: M` / `F5` | Jump directly to **Zynmixer Screen** | `SCREEN_MIXER` |
-| **`SHIFT` + `Key 12 (START)`** | `Key: R` / `Ctrl+Space`| `Key: *` (Numpad) | **Toggle MIDI Recording / Overdub** | `TOGGLE_MIDI_RECORD` |
-| **`SHIFT` + `Key 4 (SHIFT)`** | — | — | Layer 1 Active Feedback | — |
+### 3.2 Keystroke Emission & HID Protocol
+- **Standard Scan Codes:** Keys can emit standard alphanumeric ASCII keys (`A`–`Z`, `0`–`9`), directional arrows (`Up`, `Down`, `Left`, `Right`), navigation keys (`Enter`, `Escape`, `Space`, `Tab`, `Page Up`, `Page Down`), or function keys (`F1`–`F12`).
+- **Compound Modifiers:** Keys can optionally emit combination strokes (e.g., `Ctrl+C`, `Shift+Tab`, `Alt+F4`).
+- **Disabled Keys:** Unexposed or unused keys can be assigned to `none` (No Key) to ensure no spurious events are generated.
 
 ---
 
@@ -187,57 +163,9 @@ In the SayoDevice web configurator (`Lighting` tab):
 
 ---
 
-## 5. Zynthian UI Integration & CUIA Keybindings
+## 5. Linux Diagnostics & Troubleshooting
 
-Zynthian OS provides a dedicated subsystem for binding USB HID keyboards directly to Callable UI Actions (CUIA).
-
-### 5.1 Configuring Keybindings via Zynthian Webconf
-1. Connect to Zynthian Webconf: `https://zynthian.local` (default credentials: `raspberry` / `opensynth`).
-2. In the top menu, navigate to **INTERFACE** $\rightarrow$ **UI Keybindings**.
-3. Under **Key Actions**, verify or map the incoming keycodes:
-
-```text
-Key: Up          ---> Action: ARROW_UP
-Key: Down        ---> Action: ARROW_DOWN
-Key: Left        ---> Action: ARROW_LEFT
-Key: Right       ---> Action: ARROW_RIGHT
-Key: Return      ---> Action: SELECT
-Key: Escape      ---> Action: BACK
-Key: Tab         ---> Action: SWITCH_CHAIN
-Key: Space       ---> Action: TOGGLE_PLAY
-Key: Page_Up     ---> Action: PAGE_UP
-Key: Page_Down   ---> Action: PAGE_DOWN
-Key: bracketleft ---> Action: PREV_SNAPSHOT
-Key: bracketright---> Action: NEXT_SNAPSHOT
-Key: F2          ---> Action: SCREEN_MIXER
-```
-
-4. Click **Save**. The keybindings take effect immediately across all Zynthian screens without requiring a reboot.
-
-### 5.2 Autonomous "No-Touchscreen" Workflow Examples
-
-#### Example 1: Creating a New Synth Chain & Loading a Preset
-1. Press **`A`** (`Return`) on the main dashboard to open the Main Menu.
-2. Use **`DOWN`** to navigate to `New Synth Track` and press **`A`**.
-3. Use **`UP` / `DOWN`** to select the engine (e.g., `Dexed`, `OB-Xd`, `Surge XT`) and press **`A`**.
-4. Use **`UP` / `DOWN`** to scroll through sound categories and presets. Press **`A`** to load the instrument.
-5. Press **`B`** (`Escape`) to back out to the main performance view.
-6. Press **`START`** (`Space`) to start the sequencer!
-
-#### Example 2: Emergency Panic & Mixer Adjustment During Live Performance
-1. A MIDI feedback loop causes stuck notes on an external synthesizer:
-   - Press **`SHIFT` + `B`** (`MIDI Panic`). Zynthian immediately broadcasts All Notes Off across all chains.
-2. Need to adjust track balances:
-   - Press **`SHIFT` + `SELECT`** to instantly pull up the Zynmixer screen.
-   - Use **`LEFT` / `RIGHT`** to select the desired track channel.
-   - Use **`UP` / `DOWN`** to adjust the volume fader.
-   - Press **`B`** to return to instrument control.
-
----
-
-## 6. Linux Diagnostics & Troubleshooting
-
-### 6.1 Diagnostic Commands Quick-Reference
+### 5.1 Diagnostic Commands Quick-Reference
 
 When diagnosing macro keyboard connection or key transmission issues over SSH:
 
@@ -256,33 +184,33 @@ evtest
 # (Select the SayoDevice keyboard event node, e.g., /dev/input/event3, then press keys to observe scan codes)
 ```
 
-### 6.2 Common Troubleshooting Scenarios
+### 5.2 Common Troubleshooting Scenarios
 
 #### Problem 1: WebHID Cannot Detect Device on `sayodevice.com`
 - **Symptom**: Clicking "Connect" shows an empty device list or "No compatible devices found".
-- **Root Cause**: Non-Chromium browser used, or another application holds an exclusive lock on the USB device.
+- **Root Cause**: Non-Chromium browser used, or raw HID device permissions restricted in Linux.
 - **Solution**:
   1. Open the page exclusively in Google Chrome, Brave, or Microsoft Edge.
-  2. Disconnect any local desktop configuration utilities or games (like *osu!*).
-  3. Under Linux desktop, create a udev rule to allow non-root WebHID access:
+  2. Under Linux desktop, create a udev rule to allow non-root WebHID access:
      ```bash
-     echo 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="8089", MODE="0666"' | sudo tee /etc/udev/rules.d/99-sayodevice.rules
+     echo 'KERNEL=="hidraw*", SUBSYSTEM=="hidraw", MODE="0666"' | sudo tee /etc/udev/rules.d/99-sayodevice.rules
      sudo udevadm control --reload-rules && sudo udevadm trigger
      ```
+  3. Reconnect the USB cable.
 
 #### Problem 2: Arrow Keys Jump Irregularly or Double-Trigger
-- **Symptom**: Pressing `DOWN` skips multiple items in Zynthian listboxes.
+- **Symptom**: Pressing keys skips multiple items in software lists.
 - **Root Cause**: Key debounce time is set too low ($< 5\text{ ms}$) in the SayoDevice configuration, or key repeat rate in Linux is excessively fast.
-- **Solution**: In `sayodevice.com`, increase the key debounce filter to **$15\text{ ms} - 25\text{ ms}$**.
+- **Solution**: In `app.sayodevice.com`, increase the key debounce filter to **$15\text{ ms} - 25\text{ ms}$**.
 
-#### Problem 3: `SHIFT` Key Does Not Switch Layers
-- **Symptom**: Holding `SHIFT` and pressing `UP` still sends standard `Up Arrow` instead of `Page Up`.
-- **Root Cause**: Physical button is mapped to standard keyboard `Shift` (`Left Shift`) instead of SayoDevice's **`Layer Switch / Fn`** action.
-- **Solution**: In `sayodevice.com`, change the Key Type of physical Key 9 from "Normal Key" to **"Layer Function"** $\rightarrow$ **"Momentary Layer 1"**.
+#### Problem 3: `Fn` Key Does Not Switch Layers
+- **Symptom**: Holding `Fn` still sends standard Layer 0 keycodes.
+- **Root Cause**: Physical button is mapped to standard keyboard modifier (`Left Shift` or `Alt`) instead of SayoDevice's **`Layer Switch / Fn`** action.
+- **Solution**: In `app.sayodevice.com`, set the Key Type of physical Key 4 to **"Layer Function"** $\rightarrow$ **"Momentary Layer 1"**.
 
 ---
 
-## 7. Technical Authority & Reference Links
+## 6. Technical Authority & Reference Links
 
 1. **SayoDevice Official Resources**:
    - [SayoDevice WebHID App](https://sayodevice.com/)

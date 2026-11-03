@@ -270,28 +270,6 @@ Under **Webconf -> Interface -> UI Key Binding**, Zynthian provides full keyboar
 - **`o`:** Switch 3 (Top Right / Learn & Snapshot)
 - **`l`:** Switch 4 (Bottom Right / Select)
 
-### 5.3 Stage 1 Physical Integration: SayoDevice 12-Key Macro Keyboard
-
-Our hardware build integrates the [SayoDevice Macro Keyboard](macrokeyboard-guide.md) configured into a 9-key retro controller layout. The keys map directly to Zynthian navigation as follows:
-
-```
-+---------------------------------------------------------------------------------------------------------------------------------------+
-|  [ Key 1: HIDDEN ]   [ Key 2: UP ]       [ Key 3: HIDDEN ]   [ Key 4: SHIFT ]       [ Key 5: A ]            [ Key 6: B ]              |
-|  (Internal/Masked)   (D-Pad Up)          (Internal/Masked)   (Layer Modifier)       (Action A / Select)     (Action B / Back)         |
-|                                                                                                                                       |
-|  [ Key 7: LEFT ]     [ Key 8: DOWN ]     [ Key 9: RIGHT ]    [ Key 10: HIDDEN ]     [ Key 11: SELECT ]      [ Key 12: START ]         |
-|  (D-Pad Left)        (D-Pad Down)        (D-Pad Right)       (Internal/Masked)      (Screen / Menu / Enter) (Transport / Spacebar)    |
-+---------------------------------------------------------------------------------------------------------------------------------------+
-```
-
-- **`UP` / `DOWN` (Keys 2 & 8):** Vertical list scrolling and fader level adjustments.
-- **`LEFT` / `RIGHT` (Keys 7 & 9):** Channel strip traversal and parameter page switching.
-- **`A` (Key 5):** Primary Select / Confirm (equivalent to Switch 4 Short Push / `Enter`).
-- **`B` (Key 6):** Back / Exit (equivalent to Switch 2 Short Push / `Escape`).
-- **`SELECT` (Key 11):** Toggles between Main Mixer, Launcher, and Control views (`Tab`).
-- **`START` (Key 12):** Global Transport Play / Stop (`Spacebar`).
-- **`SHIFT + Key`:** Contextual actions (Chain Options via Bold Select, Snapshot Browser, Audio Routing Matrix).
-
 ---
 
 ## 6. Callable UI Actions (CUIA) Complete Reference Manual

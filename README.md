@@ -80,6 +80,66 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
    - **Touchscreen:** Verified working.
    - **Macro Keyboard:** Verified detected and working.
 
+#### Step 3: Macro Keyboard Configuration (SayoDevice 2x6F RGB)
+1. **Linux Mint WebHID Permissions:**
+   - Plugged keyboard into Linux Mint PC.
+   - Configured udev rule to allow browser access to raw HID devices:
+     ```bash
+     echo 'KERNEL=="hidraw*", SUBSYSTEM=="hidraw", MODE="0666"' | sudo tee /etc/udev/rules.d/99-sayodevice.rules
+     sudo udevadm control --reload-rules && sudo udevadm trigger
+     ```
+   - Reconnected USB cable to apply permissions.
+2. **Firmware Upgrade & Web Portal Transition:**
+   - Connected via `https://old.sayodevice.com/device` and upgraded device firmware.
+   - Successfully transitioned to the modern configurator at `https://app.sayodevice.com/`.
+3. **Key Matrix Programmed into EEPROM:**
+   - **Layer 0 (Default):**
+     - Row 1: Key 1: `none` | Key 2: `Up` | Key 3: `none` | Key 4: `Fn` (Press & Hold for Layer 1) | Key 5: `A` | Key 6: `B`
+     - Row 2: Key 7: `Left` | Key 8: `Down` | Key 9: `Right` | Key 10: `none` | Key 11: `C` | Key 12: `D`
+   - **Layer 1 (Fn Held):**
+     - Row 1: Key 1: `none` | Key 2: `I` | Key 3: `none` | Key 4: `none` | Key 5: `E` | Key 6: `F`
+     - Row 2: Key 7: `K` | Key 8: `J` | Key 9: `L` | Key 10: `none` | Key 11: `G` | Key 12: `H`
+
+#### Step 4: Zynthian UI Keybindings Configuration (Layer 0 & V5 Hardware Functions)
+Configured in Zynthian Webconf under **Interface** $\rightarrow$ **UI Keybindings** to enable autonomous "no-touchscreen" operation:
+
+1. **Design Principle:**
+   - **Layer 0 (Navigation, Selection & Knobs):**
+     - D-Pad Left/Right: Focus parameter / select active knob / change column.
+     - D-Pad Up/Down: Adjust focused knob value (increments/decrements) / scroll list / adjust fader.
+     - Key 5 (`A`): Primary Confirm / Enter (`SELECT`).
+     - Key 6 (`B`): Back / Cancel / Exit (`BACK`).
+     - Key 11 (`C`): Instant View Toggle between Mixer/Launcher and Synth Control View (`SWITCH_VIEW`).
+     - Key 12 (`D`): Master Transport Play / Stop toggle (`TOGGLE_PLAY`).
+   - **Layer 1 (V5 Hardware Button Functions - `Fn` Held):**
+     - D-Pad Up/Down (`I` / `J`): Fast scroll / Coarse knob adjustment in steps of 10 (`PAGE_UP` / `PAGE_DOWN`).
+     - D-Pad Left/Right (`K` / `L`): Instant sound preset / subsnapshot switching (`PREV_SNAPSHOT` / `NEXT_SNAPSHOT`).
+     - Key 5 (`E`): Context Options Menu / Track Options / MIDI Learn (`BOLD_SELECT`).
+     - Key 6 (`F`): V5 Emergency Panic / Silence all hanging notes (`ALL_NOTES_OFF`).
+     - Key 11 (`G`): Dedicated Snapshot Browser Screen (`SCREEN_SNAPSHOT`).
+     - Key 12 (`H`): Dedicated Master Stereo Audio Recording (`TOGGLE_AUDIO_RECORD`).
+
+2. **Webconf UI Keybindings Assignment Table:**
+
+| Key | Layer | Hardware Cluster | Target CUIA Action | Function |
+|---|---|---|---|---|
+| **`Up`** | Layer 0 | D-Pad Top | `ARROW_UP` | Turn focused knob up / scroll list up |
+| **`Down`** | Layer 0 | D-Pad Bottom | `ARROW_DOWN` | Turn focused knob down / scroll list down |
+| **`Left`** | Layer 0 | D-Pad Left | `ARROW_LEFT` | Select previous knob / move column left |
+| **`Right`** | Layer 0 | D-Pad Right | `ARROW_RIGHT` | Select next knob / move column right |
+| **`a`** | Layer 0 | Action A (Row 1, Col 5) | `SELECT` | Confirm / Enter / Open submenu |
+| **`b`** | Layer 0 | Action B (Row 1, Col 6) | `BACK` | Back / Cancel / Exit |
+| **`c`** | Layer 0 | Action C (Row 2, Col 5) | `SWITCH_VIEW` | Toggle Mixer/Launcher $\leftrightarrow$ Synth Control view |
+| **`d`** | Layer 0 | Action D (Row 2, Col 6) | `TOGGLE_PLAY` | Global transport Play / Stop toggle |
+| **`i`** | Layer 1 | D-Pad Top (`Fn` held) | `PAGE_UP` | Coarse knob jump (+10) / fast scroll up |
+| **`j`** | Layer 1 | D-Pad Bottom (`Fn` held) | `PAGE_DOWN` | Coarse knob jump (-10) / fast scroll down |
+| **`k`** | Layer 1 | D-Pad Left (`Fn` held) | `PREV_SNAPSHOT` | Load previous sound preset |
+| **`l`** | Layer 1 | D-Pad Right (`Fn` held) | `NEXT_SNAPSHOT` | Load next sound preset |
+| **`e`** | Layer 1 | Action A (`Fn` held) | `BOLD_SELECT` | Context options menu (Bold click) |
+| **`f`** | Layer 1 | Action B (`Fn` held) | `ALL_NOTES_OFF` | V5 Panic: Cut all hung notes |
+| **`g`** | Layer 1 | Action C (`Fn` held) | `SCREEN_SNAPSHOT` | Open Snapshots & Presets view |
+| **`h`** | Layer 1 | Action D (`Fn` held) | `TOGGLE_AUDIO_RECORD` | Start / Stop master audio recording |
+
 #### Next Steps:
-- Configure macro keyboard key bindings in Webconf.
+- Apply keybindings in Webconf and test live navigation and knob tweaking.
 - Verify Pisound Audio In, MIDI In, and MIDI Out.
