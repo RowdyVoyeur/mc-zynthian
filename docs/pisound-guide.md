@@ -214,7 +214,7 @@ Real-time audio latency consists of three distinct mathematical metrics:
 ### 3.3 Configuring JACK in Zynthian Webconf
 1. Navigate to **Hardware** $\rightarrow$ **Audio** in Zynthian Webconf.
 2. Set **Jack Sample Rate** to **`48000`** (Stage 1) or **`44100`** (Stages 2 & 3).
-3. Set **Jack Buffer Size** to **`128`** (safe default) or **`64`** (ultra-low latency).
+3. Set **Jack Buffer Size** to **`128`** (recommended baseline: eliminates XRUNs, achieves rock-solid $5.3\text{ ms}$ output latency) or **`64`** (ultra-low latency, but prone to XRUNs under UI load).
 4. Set **Jack Periods** to **`2`**.
 5. Click **Save** to restart JACK with the new settings.
 
@@ -269,19 +269,95 @@ Zynthian supports three distinct physical press gestures per switch:
 - **Bold Press:** Deliberate hold ($\approx 0.3\text{ s} - 1.2\text{ s}$).
 - **Long Press:** Extended hold ($> 1.2\text{ s}$).
 
+#### Hardware Pin Mapping
+Pisound's button is hardwired to **BCM GPIO 17** (Physical Pin 11), active-low with an internal pull-up. Within Zynthian's `zyncore` low-level library (`parse_envar2intarr` in `zyncontrol_vx.c`), values under 100 are interpreted via the WiringPi index table (`wpi2gpio`). Because WiringPi pin **`0`** translates to BCM GPIO 17, the switch pin string in Webconf uses `0`.
+
 #### Step-by-Step Setup:
 1. Open Zynthian Webconf: `https://zynthian.local`
-2. Navigate to **Hardware** $\rightarrow$ **Wiring Layout**.
-3. Under **Wiring Layout**, select **`Custom`** (or edit your existing custom profile).
-4. Assign an available switch index (e.g. `Switch 4` or `Switch 1`) to pin **`17`** (GPIO 17, Active-Low).
-5. Navigate to **Interface** $\rightarrow$ **UI Key Binding / Hardware Switch Actions**.
-6. Map each gesture directly to a native Zynthian CUIA or MIDI action:
-   - **Short Press:** `TOGGLE_AUDIO_PLAY` (or `TOGGLE_MIDI_PLAY`)
-   - **Bold Press:** `SCREEN_AUDIO_MIXER`
-   - **Long Press:** `ALL_NOTES_OFF` (Emergency MIDI Panic)
-7. Click **Save** and restart UI.
+2. Navigate to **Hardware** $\rightarrow$ **Audio & Hardware** (or **Wiring Layout**).
+3. Set the wiring parameters:
+   - **Wiring Layout:** `Custom`
+   - **Encoders A-pins:** `-1,-1,-1,-1`
+   - **Encoders B-pins:** `-1,-1,-1,-1`
+   - **Switches Pins:** `-1,-1,-1,-1,0` *(wPi pin 0 maps to BCM GPIO 17)*
+   - **Customization Profile:** `V5`
+4. Under **Customizable Switches** $\rightarrow$ **Switch-1 Action**:
+   - **Switch-1 Action:** `Ui Action Release` (or `Ui Action Push` for immediate press downstroke)
+   - Assign preferred CUIA actions to **Short**, **Bold**, and **Long** gestures.
+5. Click **Save**.
 
-This approach executes directly within Zynthian's event loop, requiring zero background daemons, zero external scripts, and zero additional memory overhead.
+#### Touch Navigation Slot Resolution & Custom Switch Indexing:
+Zynthian's UI runtime dynamically adapts switch assignments depending on whether Touch Navigation (on-screen V5 keypad) is enabled:
+- **Without Touch Navigation:** The physical switch sits at switch index 4, which maps directly to `custom_switch_ui_actions[4 - 4]` = **Custom Switch 1**.
+- **With Touch Navigation (`v5_keypad_left` / `v5_keypad_right`):** Zynthian injects 24 virtual switch positions (switches 4–27) for the virtual on-screen keypad buttons. This shifts the physical switch from index 4 to **index 28** ($4 + 24 = 28$). At runtime, switch index 28 queries `custom_switch_ui_actions[28 - 4]` = `custom_switch_ui_actions[24]`, which maps to **Custom Switch 25**.
+
+To ensure custom actions survive Webconf form overwrites, place the bindings in the sanctioned user override script `/zynthian/config/zynthian_custom_config.sh` (sourced on every boot and UI restart). For instance, setting Short Press to Admin Menu and Long Press to Power dialog:
+
+```bash
+cat << 'EOF' > /zynthian/config/zynthian_custom_config.sh
+# Blokas Pisound Button Mapping Example
+# Under touch navigation (V5 keypad), 1st extra physical switch (GPIO 17) maps to Custom Switch 25.
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25="UI_ACTION_RELEASE"
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_SHORT="SCREEN_ADMIN"
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_LONG="POWER"
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_BOLD="POWER"
+EOF
+chmod +x /zynthian/config/zynthian_custom_config.sh
+systemctl restart zynthian
+```
+
+*(For the active configuration implemented in this build, see [`README.md`](../README.md).)*
+
+This native approach executes directly within Zynthian's event loop (`lib_zyncore`), requiring zero background daemons, zero external scripts, and zero additional memory overhead.
+
+#### Customizing Button Actions (Alternative Profiles & Examples)
+
+You can easily adapt The Button to different performance workflows by modifying the action variables in `/zynthian/config/zynthian_custom_config.sh` and restarting the UI (`systemctl restart zynthian`).
+
+##### Available CUIA Actions Reference
+To see every available Callable UI Action (CUIA) supported by your current Zynthian installation, run this command in terminal:
+```bash
+python3 -c "import sys; sys.path.append('/zynthian/zynthian-ui'); from zyngui import zynthian_gui; print('\n'.join(sorted(zynthian_gui.get_cuia_list())))"
+```
+
+Below are three practical, battle-tested configuration examples:
+
+##### Example A: Live Performance & Transport Hub
+Ideal for live sets where you want quick hardware transport and an instant emergency panic button without needing a keyboard or touching the screen:
+```bash
+cat << 'EOF' > /zynthian/config/zynthian_custom_config.sh
+# Profile: Live Transport & Panic
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25="UI_ACTION_RELEASE"
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_SHORT="TOGGLE_PLAY"        # Start / Stop playback
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_BOLD="ALL_NOTES_OFF"      # Instant MIDI Panic (kill hung notes)
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_LONG="TOGGLE_AUDIO_RECORD" # Start / Stop master recording
+EOF
+systemctl restart zynthian
+```
+
+##### Example B: View & Navigation Switcher
+Ideal for rapidly jumping between active sound synthesis editing and audio routing/mixing:
+```bash
+cat << 'EOF' > /zynthian/config/zynthian_custom_config.sh
+# Profile: Fast View Switcher
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25="UI_ACTION_RELEASE"
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_SHORT="LAYER"              # Cycle active layer / view
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_BOLD="SCREEN_AUDIO_MIXER"  # Jump straight to Audio Mixer
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_LONG="SCREEN_SNAPSHOT"     # Open Preset / Snapshot Browser
+EOF
+systemctl restart zynthian
+```
+
+##### Example C: Immediate Tap Tempo & Metronome (`UI_ACTION_PUSH`)
+By setting the mode to `UI_ACTION_PUSH`, the switch responds instantaneously on the physical press downstroke (instead of waiting for release), making it perfect for rhythmically tapping tempo:
+```bash
+cat << 'EOF' > /zynthian/config/zynthian_custom_config.sh
+# Profile: Instant Tap Tempo
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25="UI_ACTION_PUSH"
+export ZYNTHIAN_WIRING_CUSTOM_SWITCH_25__UI_PUSH="TEMPO"               # Immediate tap tempo downstroke
+EOF
+systemctl restart zynthian
+```
 
 ---
 
@@ -445,5 +521,5 @@ Run these commands over SSH to diagnose issues with audio, MIDI, or button state
    - Roland MC-101 Guide: [`docs/mc101-guide.md`](mc101-guide.md)
    - Roland MC-101 SysEx & Memory Architecture: [`docs/mc101-sysex.md`](mc101-sysex.md)
    - Korg nanoKONTROL Guide: [`docs/nanokontrol-guide.md`](nanokontrol-guide.md)
-   - Macro Keyboard Guide: [`docs/macrokeyboard-guide.md`](macrokeyboard-guide.md)
+   - Macro Keyboard Guide: [`docs/sanyodevice-guide.md`](sanyodevice-guide.md)
 

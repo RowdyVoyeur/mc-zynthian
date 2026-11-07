@@ -318,7 +318,7 @@ CUIAs can be invoked across three primary channels:
 | **`ARROW_RIGHT`** | Cursor Right / Next Channel Strip | D-Pad Right |
 | **`SELECT`** | Confirm / Enter / Activate highlighted element | Primary Action A |
 | **`BACK`** | Return to previous menu level / Cancel | Primary Action B |
-| **`ZYNSWITCH <idx> <act>`**| Emulate hardware switch event directly | Args: switch index ($0..3$) + action (`S`=Short, `B`=Bold, `L`=Long, `P`=Press, `R`=Release) |
+| **`ZYNSWITCH <idx> <act>`**| Emulate hardware switch event directly | Args: switch index ($0..23+$) + action (`S`=Short, `B`=Bold, `L`=Long, `P`=Press, `R`=Release) |
 
 #### Transport & Audio Capture
 | CUIA Command | Behavior | Notes |
@@ -335,6 +335,72 @@ CUIAs can be invoked across three primary channels:
 | **`RESTART_UI`** | Gracefully restart the `zynthian-ui` process | Useful after config changes |
 | **`REBOOT`** | Safely reboot the operating system | Flushes buffers to disk |
 | **`POWER_OFF`** | Safely power down the system | Clean shutdown before power cut |
+
+---
+
+### 6.3 Hardware Switch Emulation (`ZYNSWITCH`) & V5 Matrix Architecture
+
+The **`ZYNSWITCH`** CUIA action provides direct low-level emulation of physical hardware push switches inside Zynthian's event processing loop (`zyncoder` / `zynthian_gui.py`). 
+
+Instead of triggering abstract GUI navigation states, `ZYNSWITCH` injects physical button make/break events identical to physical switch actuations. This makes it the primary tool for external macro pads, computer keyboards, and MIDI controllers to replicate front-panel hardware switches with full support for timing gestures.
+
+#### 1. Command Syntax & Action Types
+The `ZYNSWITCH` CUIA command requires two arguments:
+```text
+ZYNSWITCH <switch_index> <action_type>
+```
+
+| Parameter | Type | Valid Values | Description |
+|---|---|---|---|
+| **`<switch_index>`** | Integer | `0` to `23` (or higher for custom GPIOs) | Logical index of the target hardware switch. |
+| **`<action_type>`** | Character | `S`, `B`, `L`, `P`, `R` | Actuation phase or gesture duration: |
+| | | **`S` (Short):** Quick tap ($< 0.3\text{ s}$) | Primary button action (select, toggle, open view). |
+| | | **`B` (Bold):** Deliberate hold ($0.3\text{ s} - 2.0\text{ s}$) | Secondary function (options, levels, alt view). |
+| | | **`L` (Long):** Sustained hold ($> 2.0\text{ s}$) | System actions (Admin, power dialog, favorites). |
+| | | **`P` (Push):** Downstroke make event | Instant press downstroke (used for tap tempo). |
+| | | **`R` (Release):** Upstroke break event | Switch release event. |
+
+> [!NOTE]
+> **Index Alignment: Zero-Based vs Webconf Display:**
+> In low-level code, OSC commands, and CLI scripts, `ZYNSWITCH` uses **zero-based indexing** (`0` to `23`). In Zynthian Webconf under **Interface $\rightarrow$ UI Key Binding**, actions are labeled in the user-facing dropdown as `ZYNSWITCH 1`, `ZYNSWITCH 2`, etc. (representing zero-based switch index $N-1$ or direct positional slot indices).
+
+#### 2. Complete Switch Allocation Matrix (Encoders + V5 20-Button Grid)
+
+In official Zynthian V5 hardware and V5-compatible touchscreen profiles (`ZYNTHIAN_TOUCH_KEYPAD="V5"` / `Mcp23017 Encoders V5Touch`), the switch space is divided into two distinct groups:
+1. **Switches 0–3:** The four physical rotary encoder push-switches.
+2. **Switches 4–23:** The $5 \times 4$ silicone button matrix (20 physical buttons with RGB-LED feedback).
+
+| Switch Index | Webconf Label | Hardware Physical Assignment | Default Primary Gesture (`Short`) | Bold / Long Secondary Gesture |
+|---|---|---|---|---|
+| **`0`** | `ZYNSWITCH 0` | Knob #1 Push Switch / **`LAYER`** | **`Context Options / Chain Options Menu`** (Add Audio/MIDI FX, Routing, Clone, Delete chain) | Toggle views / Switch layers |
+| **`1`** | `ZYNSWITCH 1` | Knob #2 Push Switch / **`BACK`** | **`BACK / NO`** (Cancel / Return to previous view) | **Bold / Long:** Instantly opens the **Main Menu** |
+| **`2`** | `ZYNSWITCH 2` | Knob #3 Push Switch | **`MUTE TRACK`** (Mute active chain in Mixer) | Bold: Mixer MIDI-learn mode |
+| **`3`** | `ZYNSWITCH 3` | Knob #4 Push Switch / **`SELECT`** | **`SEL / YES`** (Confirm / Enter / Open Submenu) | Bold: Selection / Page browse mode (does not open Main Menu) |
+| **`4`** | `ZYNSWITCH 4` | V5 Grid: `OPT / ADMIN` | **`Admin / System Settings Screen`** | Long: Power / Shutdown dialog |
+| **`5`** | `ZYNSWITCH 5` | V5 Grid: `MIX / LEVEL` | **`Audio Mixer View`** (Faders, Meters, Chains) | Bold: Audio Levels / Master Volume view |
+| **`6`** | `ZYNSWITCH 6` | V5 Grid: `CTRL / PRESET` | **`Chain Control Screen`** (Active Synth FX/Params) | Bold: Preset/Bank list; Long: Preset favorites |
+| **`7`** | `ZYNSWITCH 7` | V5 Grid: `ZS3 / SNAPSHOT` | **`SubSnapshots (ZS3) List`** (Live patch recall) | Bold: Master Snapshot browser |
+| **`8`** | `ZYNSWITCH 8` | V5 Grid: `ALT` | **`Toggle ALT Mode`** (Switches blue $\to$ purple LEDs) | Latching modifier for transport & F1–F4 |
+| **`9`** | `ZYNSWITCH 9` | V5 Grid: `METRONOME` | **`Tempo Screen`** / Multiple taps: **Tap-Tempo** | Sets master BPM directly via tap intervals |
+| **`10`** | `ZYNSWITCH 10` | V5 Grid: `PAD / STEP` | **`ZynPad / Pattern Editor`** (Toggle View) | Long: Open Arranger View (Song Mode) |
+| **`11`** | `ZYNSWITCH 11` | V5 Grid: `Contextual View` | **`Sequencer / Looper Aux Function`** | Context-dependent in active sequencer/looper |
+| **`12`** | `ZYNSWITCH 12` | V5 Grid: `REC` (Transport) | **`Audio Record Toggle`** (Solid Circle) | In ALT mode: MIDI Recording Toggle |
+| **`13`** | `ZYNSWITCH 13` | V5 Grid: `STOP` (Transport) | **`Stop Playback & Rewind`** (Solid Square) | Bold: Global Stop / Panic (halt all sound) |
+| **`14`** | `ZYNSWITCH 14` | V5 Grid: `PLAY` (Transport) | **`Play / Pause Toggle`** (Solid Triangle) | Bold: Open Track List / Capture Folder |
+| **`15`** | `ZYNSWITCH 15` | V5 Grid: `Context Transport` | **`Secondary Transport / Track Navigation`** | Context-dependent transport helper |
+| **`16`** | `ZYNSWITCH 16` | V5 Grid: `F1 / Navigation Aux` | **`Custom / Aux Function`** | Contextual / F-Key |
+| **`17`** | `ZYNSWITCH 17` | V5 Grid: `ARROW UP` | **`Cursor Up / Scroll List Up / Knob +`** | Navigation D-Pad Up |
+| **`18`** | `ZYNSWITCH 18` | V5 Grid: `F2 / Navigation Aux` | **`Custom / Aux Function`** | Contextual / F-Key |
+| **`19`** | `ZYNSWITCH 19` | V5 Grid: `F3 / Navigation Aux` | **`Custom / Aux Function`** | Contextual / F-Key |
+| **`20`** | `ZYNSWITCH 20` | V5 Grid: `ARROW LEFT` | **`Previous Channel Strip / Cursor Left`** | Navigation D-Pad Left |
+| **`21`** | `ZYNSWITCH 21` | V5 Grid: `ARROW DOWN` | **`Cursor Down / Scroll List Down / Knob -`** | Navigation D-Pad Down |
+| **`22`** | `ZYNSWITCH 22` | V5 Grid: `ARROW RIGHT` | **`Next Channel Strip / Cursor Right`** | Navigation D-Pad Right |
+| **`23`** | `ZYNSWITCH 23` | V5 Grid: `F4 / Navigation Aux` | **`Custom / Aux Function`** | Contextual / F-Key |
+
+#### 3. Custom Switches Beyond the Grid (Indices 24+)
+When custom GPIO pushbuttons are wired into Zynthian (such as the Blokas Pisound hardware button on GPIO 17) on a system with V5 profile or Touch Navigation enabled:
+- Virtual switches 4–27 are reserved by the UI runtime for the 24 on-screen V5 touch keypad slots.
+- The 1st physical custom switch automatically shifts to **Switch 28**, mapping to `custom_switch_ui_actions[28 - 4]` = **Custom Switch 25** (`ZYNTHIAN_WIRING_CUSTOM_SWITCH_25`). See [`docs/pisound-guide.md`](pisound-guide.md#34-the-pisound-physical-pushbutton-the-button) for complete implementation details.
 
 ---
 
@@ -463,6 +529,6 @@ aconnect -l
 This manual establishes the master software platform upon which the hardware ecosystem operates:
 - **Hardware Platform:** [`docs/rpi-specs.md`](rpi-specs.md) details the compute architecture, thermal parameters, and custom 3D enclosure.
 - **Audio & Button Interface:** [`docs/pisound-guide.md`](pisound-guide.md) covers analog gain staging, I2S clocks, and context-aware CUIA scripting for The Button.
-- **Tactile Navigation:** [`docs/macrokeyboard-guide.md`](macrokeyboard-guide.md) outlines the SayoDevice 9-key retro controller layout for eyes-off UI operation.
+- **Tactile Navigation:** [`docs/sanyodevice-guide.md`](sanyodevice-guide.md) outlines the SayoDevice 9-key retro controller layout for eyes-off UI operation.
 - **External Synthesizers & Controllers:** [`docs/mc101-guide.md`](mc101-guide.md), [`docs/nanokontrol-guide.md`](nanokontrol-guide.md), and [`docs/push-guide.md`](push-guide.md) document deep Stage 2 and Stage 3 ecosystem integration.
 

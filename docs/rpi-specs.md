@@ -60,7 +60,7 @@ flowchart TD
 | **Raspberry Pi 4B (4GB)** | System Host / Motherboard | PCIe, I2S, SPI, USB, HDMI | Core Linux/Zynthian DSP host, synthesis engine, JACK audio server | *This Document* & [`docs/zynthian-guide.md`](zynthian-guide.md) |
 | **Blokas Pisound** | 40-Pin GPIO Header | I2S Master Audio + SPI MIDI | High-fidelity $24\text{-bit}/192\text{ kHz}$ DAC/ADC, 5-pin DIN MIDI, The Button | [`docs/pisound-guide.md`](pisound-guide.md) |
 | **Waveshare 5" LCD (H)** | Micro-HDMI + USB-A | HDMI Video ($800 \times 480$) + USB HID Multi-Touch | Native pixel-perfect Zynthian GUI visual feedback & auxiliary touch | *This Document* |
-| **SayoDevice Keypad** | Internal USB-A | USB HID Keyboard (EEPROM profile) | Primary blind navigation (D-pad, Action A/B, Select, Start, Shift) | [`docs/macrokeyboard-guide.md`](macrokeyboard-guide.md) |
+| **SayoDevice Keypad** | Internal USB-A | USB HID Keyboard (EEPROM profile) | Primary blind navigation (D-pad, Action A/B, Select, Start, Shift) | [`docs/sanyodevice-guide.md`](sanyodevice-guide.md) |
 | **Custom 3D Case** | Mechanical Chassis | Rigid PETG/ABS Enclosure | Houses and protects all internal boards, provides port breakouts | [`assets/case-assembly.stl`](../assets/case-assembly.stl) |
 | **Teensy 4.1 (Stage 3)** | USB Type-A | USB MIDI & Audio (Class Compliant) | Co-processor / headless synth / DSP voice | [`docs/teensy-guide.md`](teensy-guide.md) |
 
@@ -221,7 +221,7 @@ Historically, the official Zynthian UI was designed and geometrically proportion
 #### Physical Touch Target Trade-Offs
 While pixel-perfect, compressing an $800 \times 480$ layout onto a $5.0\text{-inch}$ diagonal ($187\text{ PPI}$) means that UI buttons and rotary touch rings measure only $6\text{ mm} - 9\text{ mm}$ on the glass:
 - In a live performance environment with stage vibrations or rapid playing, tapping small touch controls can lead to mis-clicks.
-- **Architectural Solution:** This physical constraint is the explicit reason **Stage 1 integrates the SayoDevice 12-key macro keyboard** ([`docs/macrokeyboard-guide.md`](macrokeyboard-guide.md)). Musician navigation (Up, Down, Left, Right, Enter/A, Back/B, Screen/Select, Transport/Start) is handled $100\%$ by tactile mechanical switches, freeing the touchscreen to serve as a visual status monitor and secondary assist.
+- **Architectural Solution:** This physical constraint is the explicit reason **Stage 1 integrates the SayoDevice 12-key macro keyboard** ([`docs/sanyodevice-guide.md`](sanyodevice-guide.md)). Musician navigation (Up, Down, Left, Right, Enter/A, Back/B, Screen/Select, Transport/Start) is handled $100\%$ by tactile mechanical switches, freeing the touchscreen to serve as a visual status monitor and secondary assist.
 
 ---
 
@@ -271,7 +271,7 @@ The physical enclosure design integrates the entire computing, display, audio, a
 1. **Physical Measurements (from `assets/case-assembly.stl`):**
    - The enclosure bounding box is **$152.00\text{ mm (Width)} \times 282.00\text{ mm (Depth)} \times 130.95\text{ mm (Height)}$** (466,532 facets).
    - The upper face provides an angled deck for the Waveshare 5-inch display.
-   - The lower front deck houses the SayoDevice macro keyboard, where the faceplate physically masks/hides Keys 1, 3, and 10 to present a 9-key retro controller layout ([`docs/macrokeyboard-guide.md`](macrokeyboard-guide.md)).
+   - The lower front deck houses the SayoDevice macro keyboard, where the faceplate physically masks/hides Keys 1, 3, and 10 to present a 9-key retro controller layout ([`docs/sanyodevice-guide.md`](sanyodevice-guide.md)).
    - Side and rear cutouts provide access to Pisound's 1/4" audio jacks, 5-pin DIN MIDI ports, gain/volume pots, The Button, and the Pi 4's Ethernet, USB, and USB-C power ports.
 
 2. **Builder Recommendations (To Be Confirmed Against Physical Prints):**

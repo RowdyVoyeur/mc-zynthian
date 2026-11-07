@@ -631,5 +631,5 @@ For rapid reference during development, the complete physical mapping of Ableton
    - Roland MC-101 SysEx & Memory Architecture: [`docs/mc101-sysex.md`](mc101-sysex.md)
    - Pisound Guide: [`docs/pisound-guide.md`](pisound-guide.md)
    - Korg nanoKONTROL Guide: [`docs/nanokontrol-guide.md`](nanokontrol-guide.md)
-   - Macro Keyboard Guide: [`docs/macrokeyboard-guide.md`](macrokeyboard-guide.md)
+   - Macro Keyboard Guide: [`docs/sanyodevice-guide.md`](sanyodevice-guide.md)
 

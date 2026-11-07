@@ -538,5 +538,5 @@ When performing alongside the Roland MC-101 (leveraging [`docs/mc101-guide.md`](
    - Ableton Push 1 Technical Protocols: [`docs/push-protocols.md`](push-protocols.md)
    - Roland MC-101 Operational Reference: [`docs/mc101-guide.md`](mc101-guide.md)
    - Roland MC-101 SysEx & Memory Architecture: [`docs/mc101-sysex.md`](mc101-sysex.md)
-   - Macro Keyboard Guide: [`docs/macrokeyboard-guide.md`](macrokeyboard-guide.md)
+   - Macro Keyboard Guide: [`docs/sanyodevice-guide.md`](sanyodevice-guide.md)
 
