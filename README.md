@@ -110,38 +110,46 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
      - **Layer 3:** Key 5: `m` | Key 6: `n` | Key 11: `o` | Key 12: `p`
      - **Layer 4:** Key 5: `q` | Key 6: `r` | Key 11: `s` | Key 12: `t`
      - **Layer 5:** Key 5: `u` | Key 6: `v` | Key 11: `w` | Key 12: `x`
-   - **Native Floating On-Screen Display (OSD):**
-     - Renders a floating notification banner on Zynthian's LCD (`DISPLAY=:0`) for 1.8 seconds whenever the layer changes.
-     - Displays the active layer name and a reminder of all 4 mapped actions (e.g., `◆ LAYER 1: CONTEXT ACTIONS & RECORDING ◆` with `[E] Bold Select • [F] Panic • [G] Snapshots • [H] Rec Audio`).
+   - **Native Flush On-Screen Display (OSD):**
+     - Renders an edge-to-edge, full-width status band across the display (`DISPLAY=:0`) directly below the title bar down to the channel pan bars for 1.8 seconds whenever the layer changes.
+     - Styled in high-contrast white over pure black (`#000000`) with generous line spacing and large readable typography (e.g. `Layer 1: Context Actions & Recording` on line 1, and `[E] Bold Select    [F] Panic (All Off)    [G] Snapshots    [H] Rec Audio` on line 2).
+     - Includes an automatic X11 boot retry loop to ensure graceful startup on system boot.
 
 5. **Daemon Service Setup (Starts on Boot & Survives Updates):**
    ```bash
    # 1. Install standard Linux input event dependency (if not present)
    apt-get update && apt-get install -y python3-evdev
 
-   # 2. Install the persistent systemd service
+   # 2. Ensure script is executable
+   chmod +x /root/mc-zynthian/scripts/layer-cake.py
+
+   # 3. Install the persistent systemd service
    cat << 'EOF' > /etc/systemd/system/layer-cake.service
    [Unit]
    Description=SayoDevice 12-Key Virtual Layer Daemon with OSD (layer-cake)
-   After=zynthian.service display-manager.service
+   After=zynthian.service graphical.target sound.target
    Wants=zynthian.service
 
    [Service]
    Type=simple
    User=root
-   WorkingDirectory=/zynthian/mc-zynthian
-   ExecStart=/usr/bin/python3 /zynthian/mc-zynthian/scripts/layer-cake.py
+   WorkingDirectory=/root/mc-zynthian
+   ExecStart=/root/mc-zynthian/scripts/layer-cake.py
    Restart=always
-   RestartSec=2
+   RestartSec=3
    Environment=DISPLAY=:0
+   Environment=XAUTHORITY=/root/.Xauthority
 
    [Install]
-   WantedBy=multi-user.target
+   WantedBy=graphical.target
    EOF
 
-   # 3. Enable and start daemon
+   # 4. Enable and start daemon
    systemctl daemon-reload
    systemctl enable --now layer-cake.service
+
+   # 5. Check live status
+   systemctl status layer-cake.service
    ```
 
 #### Step 4: Zynthian UI Keybindings Configuration (6-Layer Mappings)
