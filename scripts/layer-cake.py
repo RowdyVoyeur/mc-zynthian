@@ -137,10 +137,10 @@ class NativeOSDBanner:
 
             # Screen geometry & banner positioning (centered horizontally, just below title bar)
             screen_width = self.root.winfo_screenwidth()
-            banner_width = min(540, screen_width - 24)
-            banner_height = 52
+            banner_width = min(680, screen_width - 16)
+            banner_height = 76
             banner_x = (screen_width - banner_width) // 2
-            banner_y = 38  # Placed directly beneath the 36px title bar
+            banner_y = 40  # Placed directly beneath the 36px title bar
 
             self.root.geometry(f"{banner_width}x{banner_height}+{banner_x}+{banner_y}")
 
@@ -148,33 +148,33 @@ class NativeOSDBanner:
             container = tk.Frame(
                 self.root,
                 bg="#000000",
-                highlightbackground="#222222",
-                highlightcolor="#222222",
+                highlightbackground="#333333",
+                highlightcolor="#333333",
                 highlightthickness=1,
-                padx=14,
-                pady=5,
+                padx=16,
+                pady=10,
             )
             container.pack(fill=tk.BOTH, expand=True)
 
             self.title_label = tk.Label(
                 container,
                 text="",
-                font=("DejaVu Sans", 11, "bold"),
+                font=("DejaVu Sans", 14, "bold"),
                 fg="#ffffff",
                 bg="#000000",
                 anchor="center",
             )
-            self.title_label.pack(fill=tk.X, expand=True)
+            self.title_label.pack(fill=tk.X, pady=(0, 6))
 
             self.sub_label = tk.Label(
                 container,
                 text="",
-                font=("DejaVu Sans", 9),
-                fg="#cccccc",
+                font=("DejaVu Sans", 11),
+                fg="#ffffff",
                 bg="#000000",
                 anchor="center",
             )
-            self.sub_label.pack(fill=tk.X, expand=True)
+            self.sub_label.pack(fill=tk.X, pady=(2, 0))
 
             self.root.withdraw()  # Start hidden
             self.enabled = True
@@ -207,7 +207,7 @@ class NativeOSDBanner:
                 sub_items.append(f"[{out_key}] {label}")
             else:
                 sub_items.append(f"[{out_key}]")
-        sub_text = "   ".join(sub_items)
+        sub_text = "    ".join(sub_items)
 
         self.title_label.config(text=title_text)
         self.sub_label.config(text=sub_text)
@@ -219,8 +219,8 @@ class NativeOSDBanner:
         self.root.deiconify()
         self.root.lift()
 
-        # Auto-dismiss after 1500 ms (1.5 seconds)
-        self.hide_timer_id = self.root.after(1500, self._hide_banner)
+        # Auto-dismiss after 1800 ms (1.8 seconds)
+        self.hide_timer_id = self.root.after(1800, self._hide_banner)
 
     def _hide_banner(self) -> None:
         if self.enabled and self.root:
