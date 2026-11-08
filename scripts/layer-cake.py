@@ -206,7 +206,7 @@ class NativeOSDBanner:
 
     def _show_banner(self, layer_idx: int, layer_data: dict) -> None:
         if not self.enabled or not self.root:
-            logger.info("ACTIVE LAYER: [%d] %s", layer_idx, layer_data.get("name", ""))
+            logger.debug("ACTIVE LAYER: [%d] %s", layer_idx, layer_data.get("name", ""))
             return
 
         name = layer_data.get("name", f"Layer {layer_idx}")
@@ -337,15 +337,12 @@ class MacroLayerManager:
         """Cycles active software layer and notifies the user via on-screen OSD."""
         self.current_layer_idx = (self.current_layer_idx + direction) % self.num_layers
         layer_data = self.layers[self.current_layer_idx]
-        logger.info("Layer switched -> [%d] %s", self.current_layer_idx, layer_data.get("name", ""))
+        logger.debug("Layer switched -> [%d] %s", self.current_layer_idx, layer_data.get("name", ""))
         self.osd.notify_layer(self.current_layer_idx, layer_data)
 
     def run(self) -> None:
         """Main worker loop monitoring all SayoDevice connections and event streams."""
         self.uinput = self._create_virtual_keyboard()
-
-        # Display initial startup layer banner
-        self.osd.notify_layer(self.current_layer_idx, self.layers[self.current_layer_idx])
 
         while True:
             # 1. Connect and grab ALL SayoDevice endpoints
@@ -380,20 +377,20 @@ class MacroLayerManager:
                             # --- Track Shift Modifier (Key 4) ---
                             if key_code in (self.ecodes.KEY_LEFTSHIFT, self.ecodes.KEY_RIGHTSHIFT):
                                 self.shift_held = (key_value != 0)
-                                logger.info("Key 4 (Shift) %s", "HELD [Layer Switch Armed]" if self.shift_held else "RELEASED")
+                                logger.debug("Key 4 (Shift) %s", "HELD [Layer Switch Armed]" if self.shift_held else "RELEASED")
                                 continue
 
                             # --- Handle Layer Switching: Shift + Up (Next Layer) ---
                             if self.shift_held and key_code == self.ecodes.KEY_UP:
                                 if key_value == 1:  # Downstroke trigger
-                                    logger.info("Shift + Up triggered! Switching to next layer...")
+                                    logger.debug("Shift + Up triggered! Switching to next layer...")
                                     self.switch_layer(+1)
                                 continue
 
                             # --- Handle Layer Switching: Shift + Down (Previous Layer) ---
                             if self.shift_held and key_code == self.ecodes.KEY_DOWN:
                                 if key_value == 1:  # Downstroke trigger
-                                    logger.info("Shift + Down triggered! Switching to previous layer...")
+                                    logger.debug("Shift + Down triggered! Switching to previous layer...")
                                     self.switch_layer(-1)
                                 continue
 
@@ -417,7 +414,7 @@ class MacroLayerManager:
 
                                 if target_keycode is not None:
                                     if key_value == 1:
-                                        logger.info("Action key '%s' -> emitted '%s' (Layer %d)", char_code, target_char, self.current_layer_idx)
+                                        logger.debug("Action key '%s' -> emitted '%s' (Layer %d)", char_code, target_char, self.current_layer_idx)
                                     self.uinput.write(self.ecodes.EV_KEY, target_keycode, key_value)
                                     self.uinput.syn()
                                 continue
@@ -448,7 +445,13 @@ def main():
     parser.add_argument("--no-gui", action="store_true", help="Disable graphical Tkinter OSD (console output only)")
     parser.add_argument("--test-layers", action="store_true", help="Print verified layer structure and exit")
     parser.add_argument("--list-devices", "-l", action="store_true", help="List all connected Linux input devices and exit")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose debug logging of all keystrokes")
     args = parser.parse_args()
+
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
 
     if args.list_devices:
         try:
