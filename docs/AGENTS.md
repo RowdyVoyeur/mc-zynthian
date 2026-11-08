@@ -19,3 +19,6 @@ All documentation files in this directory are subject to the following rules:
 4. **External Sources Only (No Project File Lists):**
    - Conclude each document with a list of external source links and citations used.
    - Do NOT include lists of other internal project files or roadmap cross-reference lists.
+
+5. **File Naming Conventions (Hyphens Only):**
+   - All filenames must use lowercase kebab-case with hyphens (`-`) rather than underscores (`_`).

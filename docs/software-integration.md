@@ -603,20 +603,115 @@ alsa_out -j "MC101_out" -d "$ALSA_CARD" -r "$SAMPLE_RATE" -p "$BUFFER_SIZE" -n "
 # Wait for JACK ports to register
 sleep 2
 
-echo "[MC-101 Audio] Patching JACK connections..."
-# Route MC-101 Master Out to Pisound Main Stereo Playback
-jack_connect "MC101_in:capture_1" "system:playback_1" || true
-jack_connect "MC101_in:capture_2" "system:playback_2" || true
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Route Pisound Stereo Inputs into MC-101 PC Input (Channels 3 & 4)
-jack_connect "system:capture_1" "MC101_out:playback_3" || true
-jack_connect "system:capture_2" "MC101_out:playback_4" || true
+echo "[MC-101 Audio] Applying initial JACK audio routing (Preset 1: Master Return)..."
+if [[ -x "$SCRIPT_DIR/audio-flow.sh" ]]; then
+    "$SCRIPT_DIR/audio-flow.sh" 1 || true
+else
+    # Fallback baseline routing
+    jack_connect "zynmixer_bus:output_00a" "MC101_out:playback_1" 2>/dev/null || true
+    jack_connect "zynmixer_bus:output_00b" "MC101_out:playback_2" 2>/dev/null || true
+fi
 
 echo "[MC-101 Audio] Audio routing active. Monitoring processes..."
 wait
 ```
 
-### 3.2 Udev Rule for Auto-Hotplug (`/etc/udev/rules.d/99-mc101.rules`)
+### 3.2 Dynamic Audio Routing Manager (`scripts/audio-flow.sh`)
+
+The dynamic audio routing manager provides automated, multi-preset JACK patching between Zynthian, the Roland MC-101, and system audio interfaces. It enables cycling through 8 routing configurations on the fly and provides targeted CLI routing for individual Zynthian synth chains and MC-101 track stems.
+
+#### Core Port Topology
+
+| Logical Role | JACK Source Port | JACK Destination Port | Hardware Channel Path |
+|---|---|---|---|
+| **Zynthian Master Mix** | `zynmixer_bus:output_00a/b` | `MC101_out:playback_1/2` | Summed Zynthian stereo mix $\rightarrow$ MC-101 Master Return (direct DAC/phones) |
+| **Track MFX Insert** | `zynmixer_chan:output_XXa/b` | `MC101_out:playback_3/4` | Isolated Zynthian chain $\rightarrow$ MC-101 `PC IN` (processed by Track MFX/EQ) |
+| **Pisound Line In** | `system:capture_1/2` | `MC101_out:playback_3/4` | External hardware $\rightarrow$ MC-101 `PC IN` (processed by Track MFX/EQ) |
+| **MC-101 Master Mix** | `MC101_in:capture_1/2` | `system:playback_1/2` or `zynmixer_bus:input_01a/b` | Summed MC-101 mix $\rightarrow$ Pisound Out or Zynthian Audio In FX chain |
+| **MC-101 Isolated Stems**| `MC101_in:capture_3..10` | `zynmixer_chan:input_XXa/b` | Tracks 1–4 pre-Master FX $\rightarrow$ Zynthian effect chains or multitrack recorder |
+
+#### 8 Standard Routing Presets
+
+```mermaid
+flowchart TD
+    subgraph Preset_1 ["Preset 1: Master Mix Monitoring"]
+        ZYN1["Zynthian Master"] -->|Ch 1-2| MC_M1["MC-101 Master Return"]
+    end
+
+    subgraph Preset_2 ["Preset 2: Master + Live Track Insert"]
+        ZYN2["Zynthian Master"] -->|Ch 1-2| MC_M2["MC-101 Master Return"]
+        PIN2["Pisound Line In"] -->|Ch 3-4| MC_PC2["MC-101 PC IN (Track MFX)"]
+    end
+
+    subgraph Preset_3 ["Preset 3: Parallel Mix Out"]
+        ZYN3["Zynthian Master"] -->|L/R| SYS_OUT3["Pisound System Out"]
+        MC_OUT3["MC-101 Master Out"] -->|Ch 1-2| SYS_OUT3
+    end
+
+    subgraph Preset_4 ["Preset 4: Groovebox via Zynthian FX"]
+        MC_OUT4["MC-101 Master Out"] -->|Ch 1-2| ZYN_FX4["Zynthian FX Chain"]
+        ZYN_FX4 -->|L/R| SYS_OUT4["Pisound System Out"]
+    end
+
+    subgraph Preset_5 ["Preset 5: Serial Processing Rig"]
+        PIN5["Pisound Line In"] -->|Ch 3-4| MC_PC5["MC-101 PC IN (Track MFX)"]
+        MC_OUT5["MC-101 Master Out"] -->|Ch 1-2| ZYN_FX5["Zynthian FX Chain"]
+        ZYN_FX5 -->|L/R| SYS_OUT5["Pisound System Out"]
+    end
+
+    subgraph Preset_6 ["Preset 6: Track Insert + Dual Master"]
+        PIN6["Pisound Line In"] -->|Ch 3-4| MC_PC6["MC-101 PC IN (Track MFX)"]
+        MC_OUT6["MC-101 Master Out"] -->|Ch 1-2| SYS_OUT6["Pisound System Out"]
+        ZYN6["Zynthian Master"] -->|L/R| SYS_OUT6
+    end
+
+    subgraph Preset_7 ["Preset 7: Zynthian FX into MC-101"]
+        PIN7["Pisound Line In"] -->|L/R| ZYN_FX7["Zynthian FX Chain"]
+        ZYN_FX7 -->|Ch 3-4| MC_PC7["MC-101 PC IN (Track MFX)"]
+        MC_OUT7["MC-101 Master Out"] -->|Ch 1-2| SYS_OUT7["Pisound System Out"]
+    end
+
+    subgraph Preset_8 ["Preset 8: Multi-Track Split Stems"]
+        CHAIN0["Zynthian Chain 0 (Lead)"] -->|Ch 3-4| MC_PC8["MC-101 PC IN (Track MFX)"]
+        ZYN8["Zynthian Master (Rhythm)"] -->|Ch 1-2| MC_M8["MC-101 Master Return"]
+        MC_TRK1["MC-101 Track 1 Out"] -->|Ch 3-4| SYS_OUT8["Pisound System Out"]
+    end
+```
+
+#### CLI Command Reference
+
+```bash
+# Apply a specific preset (1 to 8)
+./scripts/audio-flow.sh 1
+
+# Cycle sequentially to the next preset (persisted in /tmp/mc101_audio_flow_preset)
+./scripts/audio-flow.sh cycle
+
+# Reset audio connections to safe default (Preset 1)
+./scripts/audio-flow.sh reset
+
+# Inspect active JACK connections and detected chains
+./scripts/audio-flow.sh status
+
+# Route an individual Zynthian chain to MC-101 PC IN (Channels 3 & 4 for Track MFX)
+./scripts/audio-flow.sh route-chain 0 pcin
+
+# Route an individual chain to MC-101 and isolate it (unlink from Zynthian Master Bus)
+./scripts/audio-flow.sh route-chain 0 pcin --isolate
+
+# Route an individual chain by engine name pattern
+./scripts/audio-flow.sh route-chain JC303 pcin
+
+# Route MC-101 isolated Track 1 direct output (Channels 3 & 4) into Zynthian Audio In / FX
+./scripts/audio-flow.sh route-track 1 zynfx
+
+# Route MC-101 Track 2 direct output directly to Pisound Out
+./scripts/audio-flow.sh route-track 2 pisound
+```
+
+### 3.3 Udev Rule for Auto-Hotplug (`/etc/udev/rules.d/99-mc101.rules`)
 
 ```udev
 # Roland MC-101 USB Audio / MIDI Hotplug Rule

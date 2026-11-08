@@ -4,3 +4,4 @@
 2. Content is limited to hardware/software specifications, operation descriptions, how-to configuration guides, and troubleshooting challenges.
 3. No setup-specific configurations (such as key layouts, key colors, or layer assignments for this build) are permitted in `docs/`. Setup configurations belong strictly in `README.md`.
 4. Each document must have a list of links to external sources used. Documents must not contain lists of other internal project files.
+5. In filenames, use hyphens (`-`) instead of underscores (`_`) across the entire repository.

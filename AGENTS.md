@@ -25,3 +25,7 @@ All agents working on this repository must strictly adhere to the following rule
 ### 4. Sources and External Links Only (No Project File Lists)
 - Each document in `docs/` must conclude with a list of external source links, references, and citations used to compile that guide.
 - **No Internal Project File Lists:** Reference sections must NEVER include a list of other project files (e.g., cross-linking other `docs/*.md` guides or `README.md` as "project ecosystem" lists). This prevents circular cross-referencing and redundant duplication.
+
+### 5. File Naming Conventions: Hyphens (`-`) Instead of Underscores (`_`)
+- All filenames across the repository (in `scripts/`, `docs/`, root, etc.) must use lowercase kebab-case with hyphens (`-`) rather than underscores (`_`) (e.g., `layer-cake.py`, `audio-flow.sh`, `mcee-audio.sh`).
+

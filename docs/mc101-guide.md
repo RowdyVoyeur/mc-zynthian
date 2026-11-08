@@ -532,3 +532,14 @@ Because the MC-101 pairs a flagship ZEN-Core engine with a tiny 2-line display a
 4. **External Patch Librarian & Snapshot Morphing**:
    - Read (`RQ1`) complete active Tone (`30.xx.00.00`) and Drum Kit (`32.xx.00.00`) working buffers to save unlimited patches externally on Zynthian, and morph or randomize parameters with intelligent anti-freeze pacing (15 ms DT1 spacing, 300 ms MFX type delay).
 
+---
+
+## 11. External References & Source Documentation
+
+- [Roland MC-101 Owner's Manual](https://www.roland.com/global/support/by_product/mc-101/owners_manuals/)
+- [Roland MC-101 Reference Manual (Firmware Ver. 1.80)](https://www.roland.com/global/support/by_product/mc-101/owners_manuals/)
+- [Roland MC-101 Update Information & Version History](https://www.roland.com/global/support/by_product/mc-101/updates_drivers/)
+- [Roland ZEN-Core Synthesis System Specification](https://www.roland.com/global/promos/zen-core/)
+- [ALSA Project Soundcard & Driver Documentation](https://www.alsa-project.org/wiki/Main_Page)
+- [JACK Audio Connection Kit Documentation](https://jackaudio.org/api/)
+

@@ -32,14 +32,16 @@ alsa_out -j "MC101_out" -d "$ALSA_CARD" -r "$SAMPLE_RATE" -p "$BUFFER_SIZE" -n "
 # Wait for JACK ports to register
 sleep 2
 
-echo "[MC-101 Audio] Patching JACK connections..."
-# Route MC-101 Master Out to Pisound Main Stereo Playback
-jack_connect "MC101_in:capture_1" "system:playback_1" 2>/dev/null || true
-jack_connect "MC101_in:capture_2" "system:playback_2" 2>/dev/null || true
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Route Pisound Stereo Inputs into MC-101 PC Input (Channels 3 & 4)
-jack_connect "system:capture_1" "MC101_out:playback_3" 2>/dev/null || true
-jack_connect "system:capture_2" "MC101_out:playback_4" 2>/dev/null || true
+echo "[MC-101 Audio] Applying initial JACK audio routing (Preset 1: Master Return)..."
+if [[ -x "$SCRIPT_DIR/audio-flow.sh" ]]; then
+    "$SCRIPT_DIR/audio-flow.sh" 1 || true
+else
+    # Fallback baseline routing
+    jack_connect "zynmixer_bus:output_00a" "MC101_out:playback_1" 2>/dev/null || true
+    jack_connect "zynmixer_bus:output_00b" "MC101_out:playback_2" 2>/dev/null || true
+fi
 
 echo "[MC-101 Audio] Audio routing active. Monitoring processes..."
 wait

@@ -479,16 +479,17 @@ Run these commands over SSH to diagnose issues with audio, MIDI, or button state
 
 #### Problem 3: "The Button" Does Not Trigger Any Actions
 - **Symptom**: Pressing The Button has no effect on Zynthian or system functions.
-- **Root Cause**: `pisound-btn.service` is stopped, or GPIO 17 is conflicting with another configuration.
-- **Solution**:
-  1. Test physical switch connectivity: run `watch -n 0.1 gpioget 0 17` while holding The Button. The value must toggle from `1` to `0` when pressed.
-  2. If the value does not toggle, inspect the physical connection and check for bent GPIO pins on Pin 11.
-  3. Restart the service and inspect logs:
+- **Root Causes**:
+  1. *Native Zynthian Switch Integration*: A Zynthian software update (`update_zynthian.sh` or Webconf update) reset the hardware wiring layout in `/zynthian/config/zynthian_envars.sh`, disabling GPIO 17 as an input switch.
+  2. *Daemon Mode*: `pisound-btn.service` is stopped, or GPIO 17 is conflicting with another daemon.
+- **Solutions**:
+  1. *For Native Zynthian Integration*: Open Webconf $\rightarrow$ **Hardware $\rightarrow$ Wiring Layout**, re-select **Custom**, verify **Switches Pins** includes the GPIO pin (`-1,-1,-1,-1,0`), and click **Save**. (User script overrides in `/zynthian/config/zynthian_custom_config.sh` remain intact and will take effect immediately upon saving).
+  2. *For Hardware Pin Verification*: Test physical switch connectivity: run `watch -n 0.1 gpioget 0 17` while holding The Button. The value must toggle from `1` to `0` when pressed.
+  3. *For Daemon Mode*: Restart `pisound-btn` service and inspect logs:
      ```bash
      systemctl restart pisound-btn
      journalctl -u pisound-btn -f
      ```
-  4. Verify that the scripts mapped in `/etc/pisound.conf` exist and have execute permissions (`chmod +x`).
 
 #### Problem 4: Severe Distortion or Harsh Buzzing on Audio In
 - **Symptom**: Recorded or pass-through audio sounds heavily squared-off or digitally distorted.
