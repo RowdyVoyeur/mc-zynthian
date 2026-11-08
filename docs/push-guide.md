@@ -624,12 +624,4 @@ For rapid reference during development, the complete physical mapping of Ableton
 2. **Ableton Push 1 Learning Hub & Support**: Getting started, drum sequencing, and video documentation. [Ableton Learn Push](https://www.ableton.com/en/help/learn-push-1/).
 3. **Carillon Audio: Ableton Push Tips & Hidden Tricks (Live 9.1.4)**: Hidden hardware shortcuts, drum parameter batch editing, single-drum quantize/delete, and momentary workflow modifiers. [Carillon Audio Push Tips](https://carillonaudio.wordpress.com/2015/08/03/ableton-push-tips-hidden-tricks-9-1-4/).
 4. **Gluon Decompiled Ableton Live 9 Remote Scripts**: Primary technical authority for internal button CCs, SysEx line protocols, and scale lookup matrices. [`gluon/AbletonLive9_RemoteScripts/Push`](https://github.com/gluon/AbletonLive9_RemoteScripts/tree/master/Push).
-5. **mc-zynthian Project Documentation & Implementation**:
-   - Push 1 Technical Protocols & MIDI Architecture: [`docs/push-protocols.md`](push-protocols.md)
-   - Push 1 Standalone Python Driver & Zynthian `ctrldev`: [`scripts/pushy.py`](../scripts/pushy.py)
-   - Roland MC-101 Guide: [`docs/mc101-guide.md`](mc101-guide.md)
-   - Roland MC-101 SysEx & Memory Architecture: [`docs/mc101-sysex.md`](mc101-sysex.md)
-   - Pisound Guide: [`docs/pisound-guide.md`](pisound-guide.md)
-   - Korg nanoKONTROL Guide: [`docs/nanokontrol-guide.md`](nanokontrol-guide.md)
-   - Macro Keyboard Guide: [`docs/sanyodevice-guide.md`](sanyodevice-guide.md)
 

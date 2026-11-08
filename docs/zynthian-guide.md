@@ -319,6 +319,7 @@ CUIAs can be invoked across three primary channels:
 | **`SELECT`** | Confirm / Enter / Activate highlighted element | Primary Action A |
 | **`BACK`** | Return to previous menu level / Cancel | Primary Action B |
 | **`ZYNSWITCH <idx> <act>`**| Emulate hardware switch event directly | Args: switch index ($0..23+$) + action (`S`=Short, `B`=Bold, `L`=Long, `P`=Press, `R`=Release) |
+| **`ZYNPOT <idx> <delta>`** | Emulate hardware rotary encoder turn directly | Args: encoder index ($0..3$) + delta ($+1$ CW / $-1$ CCW, coarse: $\pm 5, \pm 10$) |
 
 #### Transport & Audio Capture
 | CUIA Command | Behavior | Notes |
@@ -401,6 +402,64 @@ In official Zynthian V5 hardware and V5-compatible touchscreen profiles (`ZYNTHI
 When custom GPIO pushbuttons are wired into Zynthian (such as the Blokas Pisound hardware button on GPIO 17) on a system with V5 profile or Touch Navigation enabled:
 - Virtual switches 4–27 are reserved by the UI runtime for the 24 on-screen V5 touch keypad slots.
 - The 1st physical custom switch automatically shifts to **Switch 28**, mapping to `custom_switch_ui_actions[28 - 4]` = **Custom Switch 25** (`ZYNTHIAN_WIRING_CUSTOM_SWITCH_25`). See [`docs/pisound-guide.md`](pisound-guide.md#34-the-pisound-physical-pushbutton-the-button) for complete implementation details.
+
+---
+
+### 6.4 Continuous Rotary Encoder Emulation (`ZYNPOT`)
+
+While `ZYNSWITCH` emulates physical push button clicks, **`ZYNPOT`** is the native CUIA command that emulates turning Zynthian's four physical rotary encoders (`zyncoder` / `zynpot.c`).
+
+This enables USB computer keyboards, macro pads, or MIDI controller buttons to directly edit on-screen parameters without requiring physical rotary potentiometers.
+
+#### 1. Command Syntax & Parameters
+```text
+ZYNPOT <encoder_index>,<delta>
+```
+
+| Parameter | Type | Valid Values | Description |
+|---|---|---|---|
+| **`<encoder_index>`** | Integer | `0`, `1`, `2`, `3` | Zero-based index of the target rotary encoder: |
+| | | **`0`**: Encoder 1 (Top Knob on V5 / Upper-Left in classic 4-corner layout) | Controls **Parameter 1** on the active screen. |
+| | | **`1`**: Encoder 2 (Upper-Middle Knob on V5 / Lower-Left in classic layout) | Controls **Parameter 2** on the active screen. |
+| | | **`2`**: Encoder 3 (Lower-Middle Knob on V5 / Upper-Right in classic layout) | Controls **Parameter 3** on the active screen. |
+| | | **`3`**: Encoder 4 (Bottom Knob on V5 / Lower-Right in classic layout) | Controls **Parameter 4** (Primary Select / Scroll). |
+| **`<delta>`** | Integer | Positive or Negative integer | Direction and magnitude of the rotation step: |
+| | | **`1`**: Clockwise step (+1) | Increments parameter value / scrolls down. |
+| | | **`-1`**: Counter-clockwise step (-1) | Decrements parameter value / scrolls up. |
+| | | **`5`, `10`, `-5`, `-10`**: Coarse steps | Rapid parameter sweeps or coarse scroll jumps. |
+
+#### 2. Screen Parameter & Controller Mapping Reference
+
+In Zynthian UI views with vertical control orientation (`ctrl_orientation: 'vertical'`, standard on V5 and touchscreen profiles), the four parameters are stacked vertically in a column:
+- **Parameter 1 (Top box):** Driven by Encoder 0
+- **Parameter 2 (Upper-middle box):** Driven by Encoder 1
+- **Parameter 3 (Lower-middle box):** Driven by Encoder 2
+- **Parameter 4 (Bottom box):** Driven by Encoder 3 (also serves as list scroller on menu screens)
+
+| On-Screen Parameter Target | Target Encoder | Clockwise Increment (+1) | Counter-Clockwise Decrement (-1) | Coarse Jump (+10) | Coarse Jump (-10) |
+|---|---|---|---|---|---|
+| **Parameter 1** (Top Knob / Parameter 1) | `0` | `ZYNPOT 0,1` | `ZYNPOT 0,-1` | `ZYNPOT 0,10` | `ZYNPOT 0,-10` |
+| **Parameter 2** (Knob 2 / Parameter 2) | `1` | `ZYNPOT 1,1` | `ZYNPOT 1,-1` | `ZYNPOT 1,10` | `ZYNPOT 1,-10` |
+| **Parameter 3** (Knob 3 / Parameter 3) | `2` | `ZYNPOT 2,1` | `ZYNPOT 2,-1` | `ZYNPOT 2,10` | `ZYNPOT 2,-10` |
+| **Parameter 4** (Bottom Knob / Primary Select) | `3` | `ZYNPOT 3,1` | `ZYNPOT 3,-1` | `ZYNPOT 3,10` | `ZYNPOT 3,-10` |
+
+#### 3. Rotary Encoder Emulation Pairing Patterns
+By pairing two momentary triggers (e.g., adjacent keys or buttons on a generic macro pad or MIDI controller) to positive and negative deltas, continuous parameter adjustment can be achieved without analog potentiometers:
+- **Parameter 1 Adjustment (Encoder 0 / Top Knob):**
+  - Decrement: `ZYNPOT 0,-1`
+  - Increment: `ZYNPOT 0,1`
+- **Parameter 2 Adjustment (Encoder 1 / Knob 2):**
+  - Decrement: `ZYNPOT 1,-1`
+  - Increment: `ZYNPOT 1,1`
+- **Parameter 3 Adjustment (Encoder 2 / Knob 3):**
+  - Decrement: `ZYNPOT 2,-1`
+  - Increment: `ZYNPOT 2,1`
+- **Parameter 4 / List Navigation Adjustment (Encoder 3 / Bottom Knob):**
+  - Decrement / Scroll Up: `ZYNPOT 3,-1`
+  - Increment / Scroll Down: `ZYNPOT 3,1`
+- **Coarse Value Jumps:**
+  - Rapid Decrement: `ZYNPOT <idx>,-10`
+  - Rapid Increment: `ZYNPOT <idx>,10`
 
 ---
 
@@ -524,11 +583,17 @@ aconnect -l
 
 ---
 
-## 9. Inter-Document Roadmap Integration
+## 9. Technical References & Source Documentation
 
-This manual establishes the master software platform upon which the hardware ecosystem operates:
-- **Hardware Platform:** [`docs/rpi-specs.md`](rpi-specs.md) details the compute architecture, thermal parameters, and custom 3D enclosure.
-- **Audio & Button Interface:** [`docs/pisound-guide.md`](pisound-guide.md) covers analog gain staging, I2S clocks, and context-aware CUIA scripting for The Button.
-- **Tactile Navigation:** [`docs/sanyodevice-guide.md`](sanyodevice-guide.md) outlines the SayoDevice 9-key retro controller layout for eyes-off UI operation.
-- **External Synthesizers & Controllers:** [`docs/mc101-guide.md`](mc101-guide.md), [`docs/nanokontrol-guide.md`](nanokontrol-guide.md), and [`docs/push-guide.md`](push-guide.md) document deep Stage 2 and Stage 3 ecosystem integration.
+1. **Zynthian Official Documentation & Wiki:**
+   - [Zynthian User Guide](https://wiki.zynthian.org/)
+   - [Zynthian CUIA Reference Manual](https://wiki.zynthian.org/index.php/Zynthian_UI_Users_Guide#CUIA:_Callable_UI_Actions)
+   - [Zynthian Hardware Architecture & Specifications](https://wiki.zynthian.org/index.php/Zynthian_Hardware)
+2. **Zynthian Core Repositories & Source Code:**
+   - [Zynthian UI (`zynthian-ui`)](https://github.com/zynthian/zynthian-ui)
+   - [Zyncoder Hardware Driver (`zynthian/zyncoder`)](https://github.com/zynthian/zyncoder)
+   - [Zynthian Webconf (`zynthian-webconf`)](https://github.com/zynthian/zynthian-webconf)
+   - [Zynthian System Scripts (`zynthian-sys`)](https://github.com/zynthian/zynthian-sys)
+3. **Community & Architecture Discussions:**
+   - [Zynthian Discourse Forum](https://discourse.zynthian.org/)
 

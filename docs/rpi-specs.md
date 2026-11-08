@@ -466,11 +466,14 @@ jack_cpu_load
 
 ---
 
-## 8. Summary & Stage Roadmap Integration
+## 8. Technical References & Source Documentation
 
-The hardware detailed in this manual provides the rigid, low-noise foundation upon which the rest of the project is constructed:
-
-1. **Stage 1 (Current):** Standalone operations driven entirely by the **Raspberry Pi 4**, **Blokas Pisound**, **Waveshare 5-inch LCD**, and **SayoDevice Macro Keyboard**, enclosed within [`assets/case-assembly.stl`](../assets/case-assembly.stl) and managed by ZynthianOS Vangelis (see [`docs/zynthian-guide.md`](zynthian-guide.md)).
-2. **Stage 2:** Expanding external audio/MIDI interconnects by connecting the **Roland MC-101** (10-out/4-in streaming over USB 3.0, see [`docs/mc101-guide.md`](mc101-guide.md) and [`docs/mc101-sysex.md`](mc101-sysex.md)) and the **Korg nanoKONTROL 1** (see [`docs/nanokontrol-guide.md`](nanokontrol-guide.md)).
-3. **Stage 3:** Integrating deep physical control via the **Ableton Push 1** (see [`docs/push-guide.md`](push-guide.md) and [`docs/push-protocols.md`](push-protocols.md)) and custom modular voices via a repurposed **Teensy 4.1** (see [`docs/teensy-guide.md`](teensy-guide.md)).
+1. **Raspberry Pi Official Documentation:**
+   - [Raspberry Pi 4 Model B Product Brief & Mechanical Specifications](https://datasheets.raspberrypi.com/rpi4/raspberry-pi-4-product-brief.pdf)
+   - [BCM2711 ARM Peripherals Documentation](https://datasheets.raspberrypi.com/bcm2711/bcm2711-peripherals.pdf)
+   - [Raspberry Pi Video / DRM-KMS Documentation](https://www.raspberrypi.com/documentation/computers/config_txt.html#video-options)
+2. **Blokas Pisound Documentation:**
+   - [Blokas Pisound Hardware Architecture & Pinouts](https://blokas.io/pisound/docs/specs/)
+3. **Waveshare Display Resources:**
+   - [Waveshare 5-inch HDMI LCD (H) Specifications & Timings](https://www.waveshare.com/wiki/5inch_HDMI_LCD_(H))
 

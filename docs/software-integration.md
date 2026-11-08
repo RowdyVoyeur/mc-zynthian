@@ -876,11 +876,10 @@ WantedBy=multi-user.target
 +---------------------------------------------------------------------------------+
 ```
 
-### 7.1 Cross-Document References
+### 7.1 Technical References & Source Documentation
 
-- **Master OS Architecture:** [`docs/zynthian-guide.md`](zynthian-guide.md)
-- **Hardware Platform & Enclosure:** [`docs/rpi-specs.md`](rpi-specs.md)
-- **Roland MC-101 Hardware & SysEx Details:** [`docs/mc101-guide.md`](mc101-guide.md) & [`docs/mc101-sysex.md`](mc101-sysex.md)
-- **Korg nanoKONTROL Hardware Specs:** [`docs/nanokontrol-guide.md`](nanokontrol-guide.md)
-- **Ableton Push 1 Hardware & Protocols:** [`docs/push-guide.md`](push-guide.md), [`docs/push-protocols.md`](push-protocols.md), and [`scripts/pushy.py`](../scripts/pushy.py)
+- **ALSA & JACK Audio APIs:** [JACK Audio Connection Kit Documentation](https://jackaudio.org/api/)
+- **LV2 Plugin Standard:** [LV2 Architecture & Specifications](https://lv2plug.in/doc/)
+- **Zynthian Controller Subsystem (`ctrldev`):** [Zynthian UI Controller Interface GitHub](https://github.com/zynthian/zynthian-ui/tree/master/zyngui/ctrldev)
+- **Linux Python MIDI Framework (`mido`):** [Mido MIDI Objects for Python](https://mido.readthedocs.io/)
 

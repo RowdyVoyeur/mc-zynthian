@@ -514,12 +514,4 @@ Run these commands over SSH to diagnose issues with audio, MIDI, or button state
 3. **Blokas The Pisound Software Guide**: Detailed `pisound-btn`, `/etc/pisound.conf`, and `pisound-config` reference. [The Pisound Software](https://blokas.io/pisound/docs/the-pisound-software/).
 4. **Blokas Pisound Kernel Driver & Daemon GitHub**: Driver source code, device tree overlay (`pisound.dts`), and `pisound-btn.c`. [`BlokasLabs/pisound`](https://github.com/BlokasLabs/pisound).
 5. **Blokas Docs GitHub**: Markdown sources for Blokas documentation. [`BlokasLabs/pisound-docs`](https://github.com/BlokasLabs/pisound-docs).
-6. **mc-zynthian Project Documentation & Ecosystem**:
-   - Master Architecture & Stage Roadmap: [`README.md`](../README.md)
-   - Push 1 Hardware Guide: [`docs/push-guide.md`](push-guide.md)
-   - Push 1 Technical Protocols & MIDI Architecture: [`docs/push-protocols.md`](push-protocols.md)
-   - Roland MC-101 Guide: [`docs/mc101-guide.md`](mc101-guide.md)
-   - Roland MC-101 SysEx & Memory Architecture: [`docs/mc101-sysex.md`](mc101-sysex.md)
-   - Korg nanoKONTROL Guide: [`docs/nanokontrol-guide.md`](nanokontrol-guide.md)
-   - Macro Keyboard Guide: [`docs/sanyodevice-guide.md`](sanyodevice-guide.md)
 

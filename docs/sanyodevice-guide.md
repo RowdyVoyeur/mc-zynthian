@@ -152,12 +152,7 @@ evtest
 
 ## 6. Technical Authority & Reference Links
 
-1. **SayoDevice Resources:**
-   - WebHID Configuration App: [app.sayodevice.com](https://app.sayodevice.com/)
-   - Legacy WebHID Interface: [old.sayodevice.com/device](https://old.sayodevice.com/device)
-   - Official Manual: [SayoDevice WebHID Documentation](https://manual.sayodevice.com/#/en/docs/std/web_hid/README)
-   - Source Repository: [Sayobot/SayoDevice_manual GitHub](https://github.com/Sayobot/SayoDevice_manual)
-2. **Project Documentation:**
-   - Master Build Roadmap & Verified Configuration: [`README.md`](../README.md)
-   - Hardware Specifications & Assembly: [`docs/rpi-specs.md`](rpi-specs.md)
-   - Zynthian OS Architecture & CUIA Reference: [`docs/zynthian-guide.md`](zynthian-guide.md)
+- **WebHID Configuration Portal:** [app.sayodevice.com](https://app.sayodevice.com/)
+- **Legacy WebHID Recovery Interface:** [old.sayodevice.com/device](https://old.sayodevice.com/device)
+- **Official Documentation:** [SayoDevice WebHID Documentation](https://manual.sayodevice.com/#/en/docs/std/web_hid/README)
+- **Source Repository:** [Sayobot/SayoDevice_manual GitHub](https://github.com/Sayobot/SayoDevice_manual)

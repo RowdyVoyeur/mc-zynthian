@@ -531,12 +531,4 @@ When performing alongside the Roland MC-101 (leveraging [`docs/mc101-guide.md`](
    - [Korg nanoKONTROL MIDI Implementation Chart (2009.10.06)](https://www.korg.com/)
    - [Korg nanoKONTROL MIDI Implementation (Revision 1.00, 2008.12.04)](https://www.korg.com/)
    - [KORG KONTROL Editor Owner's Manual](https://www.korg.com/)
-2. **mc-zynthian Project Documentation & Ecosystem**:
-   - Master Roadmap & Architecture: [`README.md`](../README.md)
-   - Pisound Guide: [`docs/pisound-guide.md`](pisound-guide.md)
-   - Ableton Push 1 Hardware Guide: [`docs/push-guide.md`](push-guide.md)
-   - Ableton Push 1 Technical Protocols: [`docs/push-protocols.md`](push-protocols.md)
-   - Roland MC-101 Operational Reference: [`docs/mc101-guide.md`](mc101-guide.md)
-   - Roland MC-101 SysEx & Memory Architecture: [`docs/mc101-sysex.md`](mc101-sysex.md)
-   - Macro Keyboard Guide: [`docs/sanyodevice-guide.md`](sanyodevice-guide.md)
 
