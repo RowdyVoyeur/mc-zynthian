@@ -11,6 +11,7 @@ import argparse
 import logging
 import os
 import queue
+import select
 import sys
 import threading
 import time
@@ -275,12 +276,12 @@ class MacroLayerManager:
             logger.error("python3-evdev is not installed! Run: apt-get install -y python3-evdev")
             sys.exit(1)
 
-    def _find_sayodevice(self) -> Optional[object]:
-        """Scans /dev/input devices specifically for the SayoDevice keyboard interface."""
+    def _find_sayodevices(self) -> List[object]:
+        """Scans /dev/input devices and returns ALL input endpoints associated with SayoDevice."""
         devices = [self.evdev.InputDevice(path) for path in self.evdev.list_devices()]
-        candidates = []
+        matches = []
 
-        logger.info("Scanning %d input devices for SayoDevice keyboard...", len(devices))
+        logger.info("Scanning %d input devices for SayoDevice hardware...", len(devices))
         for dev in devices:
             name_lower = dev.name.lower()
             phys_lower = dev.phys.lower()
@@ -288,32 +289,11 @@ class MacroLayerManager:
 
             if is_match:
                 caps = dev.capabilities()
-                key_caps = caps.get(self.ecodes.EV_KEY, [])
+                if self.ecodes.EV_KEY in caps:
+                    matches.append(dev)
+                    logger.info("  -> Matched SayoDevice endpoint: '%s' (%s at %s)", dev.name, dev.path, dev.phys)
 
-                # Ignore pure mouse endpoints (SayoDevice exposes composite keyboard + mouse)
-                if "mouse" in name_lower and "keyboard" not in name_lower:
-                    logger.debug("Skipping mouse interface: %s (%s)", dev.name, dev.path)
-                    continue
-
-                # The keyboard interface MUST possess standard alphanumeric or arrow keys
-                has_keyboard_keys = (
-                    self.ecodes.KEY_A in key_caps
-                    or self.ecodes.KEY_UP in key_caps
-                    or self.ecodes.KEY_B in key_caps
-                )
-
-                if has_keyboard_keys:
-                    logger.info("Selected keyboard device: '%s' (%s, phys: %s)", dev.name, dev.path, dev.phys)
-                    return dev
-
-                candidates.append(dev)
-
-        if candidates:
-            chosen = candidates[0]
-            logger.info("Selected fallback candidate device: '%s' (%s)", chosen.name, chosen.path)
-            return chosen
-
-        return None
+        return matches
 
     def _create_virtual_keyboard(self) -> object:
         """Creates a virtual uinput keyboard capable of emitting all alphanumeric keys & arrows."""
@@ -344,94 +324,99 @@ class MacroLayerManager:
         self.osd.notify_layer(self.current_layer_idx, layer_data)
 
     def run(self) -> None:
-        """Main worker loop monitoring SayoDevice connection and event stream."""
+        """Main worker loop monitoring all SayoDevice connections and event streams."""
         self.uinput = self._create_virtual_keyboard()
 
         # Display initial startup layer banner
         self.osd.notify_layer(self.current_layer_idx, self.layers[self.current_layer_idx])
 
         while True:
-            # 1. Connect and grab SayoDevice
+            # 1. Connect and grab ALL SayoDevice endpoints
             logger.info("Searching for SayoDevice hardware matching '%s'...", self.device_query)
-            dev = self._find_sayodevice()
-            while dev is None:
+            devs = self._find_sayodevices()
+            while not devs:
                 time.sleep(2.0)
-                dev = self._find_sayodevice()
+                devs = self._find_sayodevices()
 
-            self.device = dev
-            logger.info("Found SayoDevice: '%s' (%s at %s)", dev.name, dev.path, dev.phys)
+            self.devices = devs
+            for d in self.devices:
+                try:
+                    d.grab()
+                    logger.info("Grabbed exclusively: '%s' (%s)", d.name, d.path)
+                except Exception as exc:
+                    logger.warning("Could not grab %s exclusively: %s (will monitor)", d.name, exc)
 
+            logger.info("Monitoring %d SayoDevice endpoint(s) simultaneously. Ready for input.", len(self.devices))
+
+            # 2. Process keystrokes using select across all endpoints
             try:
-                self.device.grab()
-                logger.info("SayoDevice grabbed exclusively. Ready for input.")
-            except Exception as exc:
-                logger.warning("Could not grab device exclusively: %s (will continue reading)", exc)
+                while True:
+                    r, _, _ = select.select(self.devices, [], [])
+                    for dev in r:
+                        for event in dev.read():
+                            if event.type != self.ecodes.EV_KEY:
+                                continue
 
-            # 2. Process keystrokes
-            try:
-                for event in self.device.read_loop():
-                    if event.type != self.ecodes.EV_KEY:
-                        continue
+                            key_code = event.code
+                            key_value = event.value  # 1 = Press (down), 0 = Release (up), 2 = Repeat
 
-                    key_code = event.code
-                    key_value = event.value  # 1 = Press (down), 0 = Release (up), 2 = Repeat
+                            # --- Track Shift Modifier (Key 4) ---
+                            if key_code in (self.ecodes.KEY_LEFTSHIFT, self.ecodes.KEY_RIGHTSHIFT):
+                                self.shift_held = (key_value != 0)
+                                logger.info("Key 4 (Shift) %s", "HELD [Layer Switch Armed]" if self.shift_held else "RELEASED")
+                                continue
 
-                    # --- Track Shift Modifier (Key 4) ---
-                    if key_code in (self.ecodes.KEY_LEFTSHIFT, self.ecodes.KEY_RIGHTSHIFT):
-                        self.shift_held = (key_value != 0)
-                        logger.info("Key 4 (Shift) %s", "HELD [Layer Switch Armed]" if self.shift_held else "RELEASED")
-                        continue
+                            # --- Handle Layer Switching: Shift + Up (Next Layer) ---
+                            if self.shift_held and key_code == self.ecodes.KEY_UP:
+                                if key_value == 1:  # Downstroke trigger
+                                    logger.info("Shift + Up triggered! Switching to next layer...")
+                                    self.switch_layer(+1)
+                                continue
 
-                    # --- Handle Layer Switching: Shift + Up (Next Layer) ---
-                    if self.shift_held and key_code == self.ecodes.KEY_UP:
-                        if key_value == 1:  # Downstroke trigger
-                            logger.info("Shift + Up triggered! Switching to next layer...")
-                            self.switch_layer(+1)
-                        continue
+                            # --- Handle Layer Switching: Shift + Down (Previous Layer) ---
+                            if self.shift_held and key_code == self.ecodes.KEY_DOWN:
+                                if key_value == 1:  # Downstroke trigger
+                                    logger.info("Shift + Down triggered! Switching to previous layer...")
+                                    self.switch_layer(-1)
+                                continue
 
-                    # --- Handle Layer Switching: Shift + Down (Previous Layer) ---
-                    if self.shift_held and key_code == self.ecodes.KEY_DOWN:
-                        if key_value == 1:  # Downstroke trigger
-                            logger.info("Shift + Down triggered! Switching to previous layer...")
-                            self.switch_layer(-1)
-                        continue
+                            # --- Dynamic Action Cluster: Keys 5, 6, 11, 12 (a, b, c, d) ---
+                            char_code = None
+                            if key_code == self.ecodes.KEY_A:
+                                char_code = "a"
+                            elif key_code == self.ecodes.KEY_B:
+                                char_code = "b"
+                            elif key_code == self.ecodes.KEY_C:
+                                char_code = "c"
+                            elif key_code == self.ecodes.KEY_D:
+                                char_code = "d"
 
-                    # --- Dynamic Action Cluster: Keys 5, 6, 11, 12 (a, b, c, d) ---
-                    char_code = None
-                    if key_code == self.ecodes.KEY_A:
-                        char_code = "a"
-                    elif key_code == self.ecodes.KEY_B:
-                        char_code = "b"
-                    elif key_code == self.ecodes.KEY_C:
-                        char_code = "c"
-                    elif key_code == self.ecodes.KEY_D:
-                        char_code = "d"
+                            if char_code is not None:
+                                # Translate through active layer
+                                active_layer = self.layers[self.current_layer_idx]
+                                target_char = active_layer["keys"].get(char_code, char_code)
+                                target_keycode_name = f"KEY_{target_char.upper()}"
+                                target_keycode = getattr(self.ecodes, target_keycode_name, None)
 
-                    if char_code is not None:
-                        # Translate through active layer
-                        active_layer = self.layers[self.current_layer_idx]
-                        target_char = active_layer["keys"].get(char_code, char_code)
-                        target_keycode_name = f"KEY_{target_char.upper()}"
-                        target_keycode = getattr(self.ecodes, target_keycode_name, None)
+                                if target_keycode is not None:
+                                    if key_value == 1:
+                                        logger.info("Action key '%s' -> emitted '%s' (Layer %d)", char_code, target_char, self.current_layer_idx)
+                                    self.uinput.write(self.ecodes.EV_KEY, target_keycode, key_value)
+                                    self.uinput.syn()
+                                continue
 
-                        if target_keycode is not None:
-                            if key_value == 1:
-                                logger.info("Action key '%s' -> emitted '%s' (Layer %d)", char_code, target_char, self.current_layer_idx)
-                            self.uinput.write(self.ecodes.EV_KEY, target_keycode, key_value)
+                            # --- Directional Arrow Keys & Others: Pass Through Cleanly ---
+                            self.uinput.write(self.ecodes.EV_KEY, key_code, key_value)
                             self.uinput.syn()
-                        continue
-
-                    # --- Directional Arrow Keys & Others: Pass Through Cleanly ---
-                    self.uinput.write(self.ecodes.EV_KEY, key_code, key_value)
-                    self.uinput.syn()
 
             except (OSError, self.evdev.device.DeviceError) as exc:
-                logger.warning("SayoDevice disconnected or communication error: %s. Re-detecting in 2s...", exc)
-                try:
-                    self.device.ungrab()
-                except Exception:
-                    pass
-                self.device = None
+                logger.warning("SayoDevice communication error: %s. Re-detecting in 2s...", exc)
+                for d in self.devices:
+                    try:
+                        d.ungrab()
+                    except Exception:
+                        pass
+                self.devices = []
                 time.sleep(2.0)
 
 
