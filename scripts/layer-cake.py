@@ -36,7 +36,7 @@ logger = logging.getLogger("MacroPad")
 
 LAYERS: List[Dict] = [
     {
-        "name": "Layer 0: Core Navigation & Transport",
+        "name": "Core Navigation & Transport",
         "keys": {"a": "a", "b": "b", "c": "c", "d": "d"},
         "labels": {
             "a": "Back/Menu",
@@ -46,7 +46,7 @@ LAYERS: List[Dict] = [
         },
     },
     {
-        "name": "Layer 1: Context Actions & Recording",
+        "name": "Context Actions & Recording",
         "keys": {"a": "e", "b": "f", "c": "g", "d": "h"},
         "labels": {
             "a": "Bold Select",
@@ -56,7 +56,7 @@ LAYERS: List[Dict] = [
         },
     },
     {
-        "name": "Layer 2: Direct Screen Jumps",
+        "name": "Direct Screen Jumps",
         "keys": {"a": "i", "b": "j", "c": "k", "d": "l"},
         "labels": {
             "a": "Audio Mixer",
@@ -66,7 +66,7 @@ LAYERS: List[Dict] = [
         },
     },
     {
-        "name": "Layer 3: Preset & Coarse Navigation",
+        "name": "Preset & Coarse Navigation",
         "keys": {"a": "m", "b": "n", "c": "o", "d": "p"},
         "labels": {
             "a": "Prev Preset",
@@ -76,7 +76,7 @@ LAYERS: List[Dict] = [
         },
     },
     {
-        "name": "Layer 4: Performance & System Utilities",
+        "name": "Performance & System Utilities",
         "keys": {"a": "q", "b": "r", "c": "s", "d": "t"},
         "labels": {
             "a": "Tap Tempo",
@@ -86,7 +86,7 @@ LAYERS: List[Dict] = [
         },
     },
     {
-        "name": "Layer 5: Sequencer & Transport",
+        "name": "Sequencer & Transport",
         "keys": {"a": "u", "b": "v", "c": "w", "d": "x"},
         "labels": {
             "a": "Play / Stop",
@@ -133,35 +133,35 @@ class NativeOSDBanner:
             self.root.title("ZynthianMacroOSD")
             self.root.overrideredirect(True)
             self.root.attributes("-topmost", True)
-            self.root.configure(bg="#12121a")
+            self.root.configure(bg="#000000")
 
-            # Screen geometry & banner positioning
+            # Screen geometry & banner positioning (centered horizontally, just below title bar)
             screen_width = self.root.winfo_screenwidth()
-            banner_width = min(560, screen_width - 40)
-            banner_height = 68
+            banner_width = min(540, screen_width - 24)
+            banner_height = 52
             banner_x = (screen_width - banner_width) // 2
-            banner_y = 16  # Top banner location
+            banner_y = 38  # Placed directly beneath the 36px title bar
 
             self.root.geometry(f"{banner_width}x{banner_height}+{banner_x}+{banner_y}")
 
-            # Container Frame with neon accent border
+            # Non-intrusive container with pure black background and subtle dark border
             container = tk.Frame(
                 self.root,
-                bg="#161622",
-                highlightbackground="#00e5ff",
-                highlightcolor="#00e5ff",
-                highlightthickness=2,
-                padx=12,
-                pady=6,
+                bg="#000000",
+                highlightbackground="#222222",
+                highlightcolor="#222222",
+                highlightthickness=1,
+                padx=14,
+                pady=5,
             )
             container.pack(fill=tk.BOTH, expand=True)
 
             self.title_label = tk.Label(
                 container,
                 text="",
-                font=("DejaVu Sans", 13, "bold"),
-                fg="#00e5ff",
-                bg="#161622",
+                font=("DejaVu Sans", 11, "bold"),
+                fg="#ffffff",
+                bg="#000000",
                 anchor="center",
             )
             self.title_label.pack(fill=tk.X, expand=True)
@@ -170,15 +170,15 @@ class NativeOSDBanner:
                 container,
                 text="",
                 font=("DejaVu Sans", 9),
-                fg="#dcdcdc",
-                bg="#161622",
+                fg="#cccccc",
+                bg="#000000",
                 anchor="center",
             )
             self.sub_label.pack(fill=tk.X, expand=True)
 
             self.root.withdraw()  # Start hidden
             self.enabled = True
-            logger.info("Native Tkinter OSD display initialized on %s (%dx%d)", display_str, banner_width, banner_height)
+            logger.info("Native Tkinter OSD display initialized on %s (%dx%d at y=%d)", display_str, banner_width, banner_height, banner_y)
 
         except Exception as exc:
             logger.warning("GUI display not available on %s (%s). Falling back to console logging.", display_str, exc)
@@ -194,6 +194,7 @@ class NativeOSDBanner:
             return
 
         name = layer_data.get("name", f"Layer {layer_idx}")
+        title_text = f"Layer {layer_idx}: {name}"
         labels = layer_data.get("labels", {})
         keys = layer_data.get("keys", {})
 
@@ -206,9 +207,9 @@ class NativeOSDBanner:
                 sub_items.append(f"[{out_key}] {label}")
             else:
                 sub_items.append(f"[{out_key}]")
-        sub_text = "   •   ".join(sub_items)
+        sub_text = "   ".join(sub_items)
 
-        self.title_label.config(text=f"◆ {name.upper()} ◆")
+        self.title_label.config(text=title_text)
         self.sub_label.config(text=sub_text)
 
         # Cancel any pending hide timers and reveal window
@@ -218,8 +219,8 @@ class NativeOSDBanner:
         self.root.deiconify()
         self.root.lift()
 
-        # Auto-dismiss after 1800 ms (1.8 seconds)
-        self.hide_timer_id = self.root.after(1800, self._hide_banner)
+        # Auto-dismiss after 1500 ms (1.5 seconds)
+        self.hide_timer_id = self.root.after(1500, self._hide_banner)
 
     def _hide_banner(self) -> None:
         if self.enabled and self.root:
