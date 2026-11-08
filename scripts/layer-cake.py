@@ -276,16 +276,43 @@ class MacroLayerManager:
             sys.exit(1)
 
     def _find_sayodevice(self) -> Optional[object]:
-        """Scans /dev/input devices for SayoDevice or matching keyboard query."""
+        """Scans /dev/input devices specifically for the SayoDevice keyboard interface."""
         devices = [self.evdev.InputDevice(path) for path in self.evdev.list_devices()]
+        candidates = []
+
+        logger.info("Scanning %d input devices for SayoDevice keyboard...", len(devices))
         for dev in devices:
             name_lower = dev.name.lower()
             phys_lower = dev.phys.lower()
-            if self.device_query in name_lower or "8089" in phys_lower or "8089" in name_lower:
-                # Verify it has EV_KEY capability
+            is_match = (self.device_query in name_lower or "8089" in phys_lower or "8089" in name_lower)
+
+            if is_match:
                 caps = dev.capabilities()
-                if self.ecodes.EV_KEY in caps:
+                key_caps = caps.get(self.ecodes.EV_KEY, [])
+
+                # Ignore pure mouse endpoints (SayoDevice exposes composite keyboard + mouse)
+                if "mouse" in name_lower and "keyboard" not in name_lower:
+                    logger.debug("Skipping mouse interface: %s (%s)", dev.name, dev.path)
+                    continue
+
+                # The keyboard interface MUST possess standard alphanumeric or arrow keys
+                has_keyboard_keys = (
+                    self.ecodes.KEY_A in key_caps
+                    or self.ecodes.KEY_UP in key_caps
+                    or self.ecodes.KEY_B in key_caps
+                )
+
+                if has_keyboard_keys:
+                    logger.info("Selected keyboard device: '%s' (%s, phys: %s)", dev.name, dev.path, dev.phys)
                     return dev
+
+                candidates.append(dev)
+
+        if candidates:
+            chosen = candidates[0]
+            logger.info("Selected fallback candidate device: '%s' (%s)", chosen.name, chosen.path)
+            return chosen
+
         return None
 
     def _create_virtual_keyboard(self) -> object:
@@ -352,18 +379,20 @@ class MacroLayerManager:
                     # --- Track Shift Modifier (Key 4) ---
                     if key_code in (self.ecodes.KEY_LEFTSHIFT, self.ecodes.KEY_RIGHTSHIFT):
                         self.shift_held = (key_value != 0)
-                        # Do not forward shift to virtual keyboard; it acts as layer modifier
+                        logger.info("Key 4 (Shift) %s", "HELD [Layer Switch Armed]" if self.shift_held else "RELEASED")
                         continue
 
                     # --- Handle Layer Switching: Shift + Up (Next Layer) ---
                     if self.shift_held and key_code == self.ecodes.KEY_UP:
                         if key_value == 1:  # Downstroke trigger
+                            logger.info("Shift + Up triggered! Switching to next layer...")
                             self.switch_layer(+1)
                         continue
 
                     # --- Handle Layer Switching: Shift + Down (Previous Layer) ---
                     if self.shift_held and key_code == self.ecodes.KEY_DOWN:
                         if key_value == 1:  # Downstroke trigger
+                            logger.info("Shift + Down triggered! Switching to previous layer...")
                             self.switch_layer(-1)
                         continue
 
@@ -386,6 +415,8 @@ class MacroLayerManager:
                         target_keycode = getattr(self.ecodes, target_keycode_name, None)
 
                         if target_keycode is not None:
+                            if key_value == 1:
+                                logger.info("Action key '%s' -> emitted '%s' (Layer %d)", char_code, target_char, self.current_layer_idx)
                             self.uinput.write(self.ecodes.EV_KEY, target_keycode, key_value)
                             self.uinput.syn()
                         continue
@@ -414,7 +445,22 @@ def main():
     parser.add_argument("--display", "-d", default=":0", help="X11 DISPLAY for OSD popup (default: ':0')")
     parser.add_argument("--no-gui", action="store_true", help="Disable graphical Tkinter OSD (console output only)")
     parser.add_argument("--test-layers", action="store_true", help="Print verified layer structure and exit")
+    parser.add_argument("--list-devices", "-l", action="store_true", help="List all connected Linux input devices and exit")
     args = parser.parse_args()
+
+    if args.list_devices:
+        try:
+            import evdev
+            from evdev import ecodes
+            devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
+            print(f"Connected Input Devices ({len(devices)} found):")
+            for dev in devices:
+                caps = dev.capabilities().get(ecodes.EV_KEY, [])
+                has_kb = (ecodes.KEY_A in caps or ecodes.KEY_UP in caps or ecodes.KEY_B in caps)
+                print(f"  {dev.path}: '{dev.name}' (phys: {dev.phys}) -> Has Keyboard Keys: {has_kb}")
+        except Exception as exc:
+            print(f"Error listing input devices: {exc}")
+        sys.exit(0)
 
     if args.test_layers:
         print(f"Verified {len(LAYERS)} Configured Layers:")
