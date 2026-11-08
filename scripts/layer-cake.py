@@ -129,34 +129,50 @@ class NativeOSDBanner:
         try:
             import tkinter as tk
             self.tk = tk
-            self.root = tk.Tk()
+        except ImportError:
+            logger.warning("python3-tk is not installed. Falling back to console logging.")
+            self.enabled = False
+            return
+
+        # Boot retry loop: wait for X11 / startx to be ready on system startup
+        for attempt in range(20):
+            try:
+                self.root = self.tk.Tk()
+                break
+            except Exception as exc:
+                if attempt < 19:
+                    time.sleep(1.0)
+                else:
+                    logger.warning("GUI display not available on %s (%s). Falling back to console logging.", display_str, exc)
+                    self.enabled = False
+                    return
+
+        try:
             self.root.title("ZynthianMacroOSD")
             self.root.overrideredirect(True)
             self.root.attributes("-topmost", True)
             self.root.configure(bg="#000000")
 
-            # Screen geometry & banner positioning (centered horizontally, just below title bar)
+            # Screen geometry: full horizontal width, aligned from title bar down to channel pan bars
             screen_width = self.root.winfo_screenwidth()
-            banner_width = min(680, screen_width - 16)
-            banner_height = 76
-            banner_x = (screen_width - banner_width) // 2
-            banner_y = 40  # Placed directly beneath the 36px title bar
+            banner_width = screen_width
+            banner_height = 80
+            banner_x = 0
+            banner_y = 36  # Placed directly beneath the 36px title bar
 
             self.root.geometry(f"{banner_width}x{banner_height}+{banner_x}+{banner_y}")
 
-            # Non-intrusive container with pure black background and subtle dark border
-            container = tk.Frame(
+            # Seamless full-width container matching native Zynthian background
+            container = self.tk.Frame(
                 self.root,
                 bg="#000000",
-                highlightbackground="#333333",
-                highlightcolor="#333333",
-                highlightthickness=1,
-                padx=16,
+                highlightthickness=0,
+                padx=20,
                 pady=10,
             )
-            container.pack(fill=tk.BOTH, expand=True)
+            container.pack(fill=self.tk.BOTH, expand=True)
 
-            self.title_label = tk.Label(
+            self.title_label = self.tk.Label(
                 container,
                 text="",
                 font=("DejaVu Sans", 14, "bold"),
@@ -164,9 +180,9 @@ class NativeOSDBanner:
                 bg="#000000",
                 anchor="center",
             )
-            self.title_label.pack(fill=tk.X, pady=(0, 6))
+            self.title_label.pack(fill=self.tk.X, pady=(0, 6))
 
-            self.sub_label = tk.Label(
+            self.sub_label = self.tk.Label(
                 container,
                 text="",
                 font=("DejaVu Sans", 11),
@@ -174,14 +190,14 @@ class NativeOSDBanner:
                 bg="#000000",
                 anchor="center",
             )
-            self.sub_label.pack(fill=tk.X, pady=(2, 0))
+            self.sub_label.pack(fill=self.tk.X, pady=(2, 0))
 
             self.root.withdraw()  # Start hidden
             self.enabled = True
             logger.info("Native Tkinter OSD display initialized on %s (%dx%d at y=%d)", display_str, banner_width, banner_height, banner_y)
 
         except Exception as exc:
-            logger.warning("GUI display not available on %s (%s). Falling back to console logging.", display_str, exc)
+            logger.warning("Error configuring GUI window on %s (%s). Falling back to console logging.", display_str, exc)
             self.enabled = False
 
     def notify_layer(self, layer_idx: int, layer_data: dict) -> None:
