@@ -127,7 +127,7 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
    cat << 'EOF' > /etc/systemd/system/layer-cake.service
    [Unit]
    Description=SayoDevice 12-Key Virtual Layer Daemon with OSD (layer-cake)
-   After=zynthian.service graphical.target sound.target
+   After=zynthian.service sound.target
    Wants=zynthian.service
 
    [Service]
@@ -141,7 +141,7 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
    Environment=XAUTHORITY=/root/.Xauthority
 
    [Install]
-   WantedBy=graphical.target
+   WantedBy=multi-user.target
    EOF
 
    # 4. Enable and start daemon
