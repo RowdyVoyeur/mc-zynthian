@@ -314,23 +314,31 @@ class MacroLayerManager:
 
     def _create_virtual_keyboard(self) -> object:
         """Creates a virtual uinput keyboard capable of emitting all alphanumeric keys & arrows."""
+        # 1. Register all alphabet keys A through Z explicitly by name (Linux scancodes are QWERTY, not alphabetic)
         keys_to_support = [
+            getattr(self.ecodes, f"KEY_{c.upper()}")
+            for c in "abcdefghijklmnopqrstuvwxyz"
+        ]
+        # 2. Add directional arrows, modifiers, and navigation keys
+        keys_to_support.extend([
             self.ecodes.KEY_UP,
             self.ecodes.KEY_DOWN,
             self.ecodes.KEY_LEFT,
             self.ecodes.KEY_RIGHT,
             self.ecodes.KEY_LEFTSHIFT,
             self.ecodes.KEY_RIGHTSHIFT,
-        ]
-        # Register keys A through Z
-        for k in range(self.ecodes.KEY_A, self.ecodes.KEY_Z + 1):
-            keys_to_support.append(k)
+            self.ecodes.KEY_ENTER,
+            self.ecodes.KEY_ESC,
+            self.ecodes.KEY_SPACE,
+            self.ecodes.KEY_BACKSPACE,
+            self.ecodes.KEY_TAB,
+        ])
 
         cap = {
-            self.ecodes.EV_KEY: keys_to_support,
+            self.ecodes.EV_KEY: sorted(list(set(keys_to_support))),
         }
         uinput = self.evdev.UInput(cap, name="Zynthian-MacroPad-Virtual", version=0x1)
-        logger.info("Virtual keyboard created: Zynthian-MacroPad-Virtual")
+        logger.info("Virtual keyboard created: Zynthian-MacroPad-Virtual (%d keys registered)", len(cap[self.ecodes.EV_KEY]))
         return uinput
 
     def switch_layer(self, direction: int) -> None:
