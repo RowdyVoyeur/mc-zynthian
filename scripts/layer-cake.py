@@ -156,7 +156,7 @@ class NativeOSDBanner:
             # Screen geometry: full horizontal width, aligned from title bar down to channel pan bars
             screen_width = self.root.winfo_screenwidth()
             banner_width = screen_width
-            banner_height = 80
+            banner_height = 86
             banner_x = 0
             banner_y = 36  # Placed directly beneath the 36px title bar
 
@@ -180,12 +180,12 @@ class NativeOSDBanner:
                 bg="#000000",
                 anchor="center",
             )
-            self.title_label.pack(fill=self.tk.X, pady=(0, 6))
+            self.title_label.pack(fill=self.tk.X, pady=(0, 4))
 
             self.sub_label = self.tk.Label(
                 container,
                 text="",
-                font=("DejaVu Sans", 11),
+                font=("DejaVu Sans", 13),
                 fg="#ffffff",
                 bg="#000000",
                 anchor="center",
@@ -377,6 +377,8 @@ class MacroLayerManager:
                             # --- Track Shift Modifier (Key 4) ---
                             if key_code in (self.ecodes.KEY_LEFTSHIFT, self.ecodes.KEY_RIGHTSHIFT):
                                 self.shift_held = (key_value != 0)
+                                if key_value == 1:  # Downstroke: preview current active layer immediately
+                                    self.osd.notify_layer(self.current_layer_idx, self.layers[self.current_layer_idx])
                                 logger.debug("Key 4 (Shift) %s", "HELD [Layer Switch Armed]" if self.shift_held else "RELEASED")
                                 continue
 
