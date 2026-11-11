@@ -99,10 +99,12 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
 
 4. **Background Virtual Layer Daemon ([`scripts/layer-cake.py`](scripts/layer-cake.py)):**
    - **6 Software Layers (0 to 5):** Configurable in Python, easily extensible.
-   - **Directional Navigation:** `Up`, `Down`, `Left`, `Right` remain persistent across all layers for cursor navigation, knob adjustment, and list scrolling.
-   - **Two-Way Layer Switching:**
+   - **Directional & Shift-Modified Navigation:**
+     - `Up`, `Down`, `Left`, `Right` remain persistent across all layers for cursor navigation, knob adjustment, and list scrolling.
      - **`Shift + Up` (Key 4 + Key 2):** Cycles to the **next layer** ($0 \to 1 \to 2 \to 3 \to 4 \to 5 \to 0$).
      - **`Shift + Down` (Key 4 + Key 8):** Cycles to the **previous layer** ($1 \to 0 \to 5 \to 4 \to 3 \to 2 \dots$).
+     - **`Shift + Left` (Key 4 + Key 7):** Emits **`Escape`** (`KEY_ESC`) across all layers for No / Back / Cancel.
+     - **`Shift + Right` (Key 4 + Key 9):** Emits **`Enter`** (`KEY_ENTER`) across all layers for Yes / Select / Confirm.
    - **Dynamic Action Cluster (Keys 5, 6, 11, 12):**
      - **Layer 0:** Key 5: `a` | Key 6: `b` | Key 11: `c` | Key 12: `d`
      - **Layer 1:** Key 5: `e` | Key 6: `f` | Key 11: `g` | Key 12: `h`

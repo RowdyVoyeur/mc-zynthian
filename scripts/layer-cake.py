@@ -404,6 +404,22 @@ class MacroLayerManager:
                                     self.switch_layer(-1)
                                 continue
 
+                            # --- Handle Universal Navigation: Shift + Left (Escape / No / Back) ---
+                            if self.shift_held and key_code == self.ecodes.KEY_LEFT:
+                                if key_value == 1:
+                                    logger.debug("Shift + Left -> emitted KEY_ESC (Escape)")
+                                self.uinput.write(self.ecodes.EV_KEY, self.ecodes.KEY_ESC, key_value)
+                                self.uinput.syn()
+                                continue
+
+                            # --- Handle Universal Navigation: Shift + Right (Enter / Yes / Select) ---
+                            if self.shift_held and key_code == self.ecodes.KEY_RIGHT:
+                                if key_value == 1:
+                                    logger.debug("Shift + Right -> emitted KEY_ENTER (Enter)")
+                                self.uinput.write(self.ecodes.EV_KEY, self.ecodes.KEY_ENTER, key_value)
+                                self.uinput.syn()
+                                continue
+
                             # --- Dynamic Action Cluster: Keys 5, 6, 11, 12 (a, b, c, d) ---
                             char_code = None
                             if key_code == self.ecodes.KEY_A:
