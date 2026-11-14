@@ -536,10 +536,10 @@ In Vendor Mode, the MC-101 functions as a high-resolution, multi-channel USB 2.0
 - **4 Channels IN (Pi $\to$ MC-101):** 1+2 Master In, 3+4 PC In (routes into MC-101 mixer).
 
 > [!TIP]
-> **Native Zynthian Audio Router Discovery (`zynain_` / `zynaout_` Prefix & JACK Port Aliases):**
+> **Native Zynthian Audio Router Discovery (`zynain_` / `zynaout_` Prefix, Hotplug Exclusion & JACK Port Aliases):**
 > In Zynthian OS (`zynthian_autoconnect.py`), the internal audio router discovers external hardware capture and playback bridges by querying JACK for clients prefixed with **`zynain`** (`jclient.get_ports("zynain", is_output=True, is_audio=True)`) and **`zynaout`** (`jclient.get_ports("zynaout", is_input=True, is_audio=True)`).
-> Furthermore, Zynthian's built-in `hotplug_audio` helper spawns `alsa_in`/`alsa_out` without `-c 10` or `-c 4`, which fails on the MC-101 in `VENDOR` mode because the MC-101 USB descriptor requires exact channel counts (`-c 10` for capture, `-c 4` for playback) at `44100` Hz.
-> By launching `alsa_in` with `-j zynain_mc101 -c 10 -r 44100` and `alsa_out` with `-j zynaout_mc101 -c 4 -r 44100` and assigning JACK port aliases (`port.set_alias()`), `zynthian_gui_audio_in.py` and `zynthian_gui_audio_out.py` automatically populate Zynthian's native **Chain Options $\rightarrow$ Audio In** and **Chain Options $\rightarrow$ Audio Out** menus with human-readable track names (`MC-101 Master L/R`, `MC-101 Track 1..4 L/R`, `MC-101 Master In L/R`, `MC-101 PC IN L/R`) and stereo pair checkboxes (`Outputs 3+4 (stereo)`, `Outputs 5+6 (stereo)`), while persisting all routings inside Zynthian Snapshots (`.zss`).
+> However, when `hotplug_audio_enabled` is active (`1` by default), `zynthian_autoconnect.py` automatically runs `alsa_in -d hw:MC101 -j zynain_MC101` and `alsa_out -d hw:MC101 -j zynaout_MC101` **without** `-r 44100 -p 64 -n 4 -c 10` / `-c 4`, locking the USB audio interface with default 2048-frame buffers (causing severe XRUNs and resampling noise) and generic `MC101 1..10` aliases.
+> Adding `export ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_IN="MC101"` and `export ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_OUT="MC101"` to `/zynthian/config/zynthian_custom_config.sh` instructs `update_hw_audio_ports()` to skip `MC101`, while `get_audio_capture_ports()` and `get_hw_audio_dst_ports()` still discover `zynain_mc101` (`-r 44100 -p 64 -n 4 -c 10`) and `zynaout_mc101` (`-r 44100 -p 64 -n 4 -c 4`) and display their custom JACK aliases (`MC-101 Master L/R`, `MC-101 Ch 1..4 L/R`, `MC-101 PC IN L/R`) inside Zynthian's native **Chain Options $\rightarrow$ Audio In** and **Chain Options $\rightarrow$ Audio Out** menus.
 
 ```
 +---------------------------------------------------------------------------------+
@@ -548,16 +548,16 @@ In Vendor Mode, the MC-101 functions as a high-resolution, multi-channel USB 2.0
 |  [Roland MC-101 USB Audio Class Interface (hw:MC101,DEV=0)]                     |
 |           |                                             ^                       |
 |           v (10 Channels Capture)                       | (4 Channels Playback) |
-|  [alsa_in -j zynain_mc101 -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 10]         |
+|  [alsa_in -j zynain_mc101 -d hw:MC101,DEV=0 -r 44100 -p 64 -n 4 -c 10]          |
 |           |                                             |                       |
 |           v                                             |                       |
 |  [JACK2 Audio Server + zynautoconnect Native UI Menus]  |                       |
 |      |               |               |                  |                       |
-|      v (Track 1-4)   v (Master L/R)  v (Main Mixbus)    |                       |
+|      v (Ch 1-4)      v (Master L/R)  v (Main Mixbus)    |                       |
 |  [Zynthian Chains] [Zynthian FX]  [Pisound Audio Out]   |                       |
 |                                      |                  |                       |
 |  [Zynthian Chain / Main / Pisound] --+------------------+                       |
-|             (alsa_out -j zynaout_mc101 -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 4)
+|             (alsa_out -j zynaout_mc101 -d hw:MC101,DEV=0 -r 44100 -p 64 -n 4 -c 4)
 +---------------------------------------------------------------------------------+
 ```
 
@@ -573,7 +573,7 @@ set -uo pipefail
 
 ALSA_CARD="hw:MC101,DEV=0"
 SAMPLE_RATE=44100
-BUFFER_SIZE=128
+PERIOD_SIZE=64
 PERIODS=4
 
 IN_CLIENT="zynain_mc101"
@@ -588,16 +588,16 @@ c = jack.Client("mc101_alias_setter", no_start_server=True)
 aliases = {
     "zynain_mc101:capture_1":  "MC-101 Master L",
     "zynain_mc101:capture_2":  "MC-101 Master R",
-    "zynain_mc101:capture_3":  "MC-101 Track 1 L",
-    "zynain_mc101:capture_4":  "MC-101 Track 1 R",
-    "zynain_mc101:capture_5":  "MC-101 Track 2 L",
-    "zynain_mc101:capture_6":  "MC-101 Track 2 R",
-    "zynain_mc101:capture_7":  "MC-101 Track 3 L",
-    "zynain_mc101:capture_8":  "MC-101 Track 3 R",
-    "zynain_mc101:capture_9":  "MC-101 Track 4 L",
-    "zynain_mc101:capture_10": "MC-101 Track 4 R",
-    "zynaout_mc101:playback_1": "MC-101 Master In L",
-    "zynaout_mc101:playback_2": "MC-101 Master In R",
+    "zynain_mc101:capture_3":  "MC-101 Ch 1 L",
+    "zynain_mc101:capture_4":  "MC-101 Ch 1 R",
+    "zynain_mc101:capture_5":  "MC-101 Ch 2 L",
+    "zynain_mc101:capture_6":  "MC-101 Ch 2 R",
+    "zynain_mc101:capture_7":  "MC-101 Ch 3 L",
+    "zynain_mc101:capture_8":  "MC-101 Ch 3 R",
+    "zynain_mc101:capture_9":  "MC-101 Ch 4 L",
+    "zynain_mc101:capture_10": "MC-101 Ch 4 R",
+    "zynaout_mc101:playback_1": "MC-101 Master L",
+    "zynaout_mc101:playback_2": "MC-101 Master R",
     "zynaout_mc101:playback_3": "MC-101 PC IN L",
     "zynaout_mc101:playback_4": "MC-101 PC IN R",
 }

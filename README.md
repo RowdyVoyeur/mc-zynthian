@@ -256,11 +256,19 @@ systemctl restart zynthian
 
 #### Step 7: Roland MC-101 USB Audio Bridge & Native Zynthian UI Audio Routing
 
-The Roland MC-101 operates as a multi-channel USB soundcard under Linux when set to `VENDOR` mode ([`docs/mc101-guide.md`](docs/mc101-guide.md)). The audio transport is bridged into JACK via [`scripts/mcee-audio.sh`](scripts/mcee-audio.sh), providing 10 capture channels (stems out of MC-101) and 4 playback channels (audio into MC-101).
+The Roland MC-101 operates as a multi-channel USB soundcard under Linux when set to `VENDOR` mode ([`docs/mc101-guide.md`](docs/mc101-guide.md)). The audio transport is bridged into JACK via [`scripts/mcee-audio.sh`](scripts/mcee-audio.sh), providing 10 capture channels (stems out of MC-101) and 4 playback channels (audio into MC-101) using the verified `mc101-pisound` parameters (`-r 44100 -p 64 -n 4 -c 10` and `-r 44100 -p 64 -n 4 -c 4`).
 
-Because Zynthian's internal audio router (`zynthian_autoconnect`) discovers external USB audio bridges by looking for JACK clients prefixed with **`zynain`** (capture) and **`zynaout`** (playback), `scripts/mcee-audio.sh` registers its bridges as **`zynain_mc101`** and **`zynaout_mc101`** and sets human-readable JACK port aliases on all 14 channels. This makes every MC-101 track and input appear directly inside Zynthian's native **Audio In** and **Audio Out** chain menus, and ensures all routings are saved and restored in Zynthian Snapshots (`.zss`).
+Because Zynthian's internal audio router (`zynthian_autoconnect`) discovers external USB audio bridges by looking for JACK clients prefixed with **`zynain`** (capture) and **`zynaout`** (playback), `scripts/mcee-audio.sh`:
+1. Excludes `MC101` from Zynthian's built-in generic `hotplug_audio` spawner (`ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_IN="MC101"` and `ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_OUT="MC101"` in `/zynthian/config/zynthian_custom_config.sh`), preventing Zynthian from grabbing `hw:MC101` with default unbuffered settings and generic `MC101 1..10` names.
+2. Registers its bridges as **`zynain_mc101`** and **`zynaout_mc101`** and sets human-readable JACK port aliases (`MC-101 Master L/R`, `MC-101 Ch 1 L/R` .. `MC-101 Ch 4 L/R`, `MC-101 PC IN L/R`) on all 14 channels. This makes every MC-101 channel appear directly inside Zynthian's native **Audio In** and **Audio Out** chain menus, and ensures all routings are saved and restored in Zynthian Snapshots (`.zss`).
 
-##### 1. Installing & Enabling the Persistent Audio Bridge Service (`mcee-audio.service`)
+##### 1. Webconf Audio Settings (Required for Zero-XRUN Operation)
+In Zynthian Webconf under **Hardware** $\rightarrow$ **Audio**, ensure Pisound JACK parameters match the `mc101-pisound` timing window:
+- **Sample Rate:** `44100` (recommended so `alsa_in`/`alsa_out` require zero sample-rate conversion against the MC-101's fixed $44.1\text{ kHz}$ clock; `48000` is also supported)
+- **Buffer Size:** `128` (or `64`)
+- **Number of Buffers:** `2`
+
+##### 2. Installing & Enabling the Persistent Audio Bridge Service (`mcee-audio.service`)
 
 ```bash
 # 1. Ensure scripts are executable
@@ -290,35 +298,35 @@ systemctl daemon-reload
 systemctl enable --now mcee-audio.service
 ```
 
-##### 2. Native Zynthian UI Port Map (`Chain Options` $\rightarrow$ `Audio In` / `Audio Out`)
+##### 3. Native Zynthian UI Port Map (`Chain Options` $\rightarrow$ `Audio In` / `Audio Out`)
 
 With Pisound as the primary 2-in / 2-out soundcard (`Inputs 1–2` and `Outputs 1–2`), the MC-101 channels appear in Zynthian's native UI menus as:
 
 | Zynthian UI Menu | Menu Entry Displayed on Screen | JACK Port | Signal Path |
 |---|---|---|---|
-| **Audio In** | `Input 1` / `Input 2` | `system:capture_1/2` | Pisound Hardware Line In L/R |
+| **Audio In** | `Input 1 (system 1)` / `Input 2 (system 2)` | `system:capture_1/2` | Pisound Hardware Line In L/R |
 | **Audio In** | `Input 3 (MC-101 Master L)` / `Input 4 (MC-101 Master R)` | `zynain_mc101:capture_1/2` | MC-101 Master Stereo Out $\rightarrow$ Zynthian |
-| **Audio In** | `Input 5 (MC-101 Track 1 L)` / `Input 6 (MC-101 Track 1 R)` | `zynain_mc101:capture_3/4` | MC-101 Track 1 Direct Out $\rightarrow$ Zynthian |
-| **Audio In** | `Input 7 (MC-101 Track 2 L)` / `Input 8 (MC-101 Track 2 R)` | `zynain_mc101:capture_5/6` | MC-101 Track 2 Direct Out $\rightarrow$ Zynthian |
-| **Audio In** | `Input 9 (MC-101 Track 3 L)` / `Input 10 (MC-101 Track 3 R)` | `zynain_mc101:capture_7/8` | MC-101 Track 3 Direct Out $\rightarrow$ Zynthian |
-| **Audio In** | `Input 11 (MC-101 Track 4 L)` / `Input 12 (MC-101 Track 4 R)` | `zynain_mc101:capture_9/10` | MC-101 Track 4 Direct Out $\rightarrow$ Zynthian |
+| **Audio In** | `Input 5 (MC-101 Ch 1 L)` / `Input 6 (MC-101 Ch 1 R)` | `zynain_mc101:capture_3/4` | MC-101 Track 1 Direct Out $\rightarrow$ Zynthian |
+| **Audio In** | `Input 7 (MC-101 Ch 2 L)` / `Input 8 (MC-101 Ch 2 R)` | `zynain_mc101:capture_5/6` | MC-101 Track 2 Direct Out $\rightarrow$ Zynthian |
+| **Audio In** | `Input 9 (MC-101 Ch 3 L)` / `Input 10 (MC-101 Ch 3 R)` | `zynain_mc101:capture_7/8` | MC-101 Track 3 Direct Out $\rightarrow$ Zynthian |
+| **Audio In** | `Input 11 (MC-101 Ch 4 L)` / `Input 12 (MC-101 Ch 4 R)` | `zynain_mc101:capture_9/10` | MC-101 Track 4 Direct Out $\rightarrow$ Zynthian |
 | **Audio Out** | `Outputs 1+2 (stereo)` | `system:playback_1/2` | Zynthian $\rightarrow$ Pisound Hardware Out L/R |
-| **Audio Out** | `Outputs 3+4 (stereo)` / `Output 3/4 (MC-101 Master In L/R)` | `zynaout_mc101:playback_1/2` | Zynthian $\rightarrow$ MC-101 Master Mix Return |
+| **Audio Out** | `Outputs 3+4 (stereo)` / `Output 3/4 (MC-101 Master L/R)` | `zynaout_mc101:playback_1/2` | Zynthian $\rightarrow$ MC-101 Master Mix Return |
 | **Audio Out** | `Outputs 5+6 (stereo)` / `Output 5/6 (MC-101 PC IN L/R)` | `zynaout_mc101:playback_3/4` | Zynthian $\rightarrow$ MC-101 `PC IN` (Track Insert / MFX) |
 
-##### 3. Step-by-Step Native Zynthian UI Routing Workflows
+##### 4. Step-by-Step Native Zynthian UI Routing Workflows
 
 1. **Route MC-101 Track 4 (or Track 1–4) $\rightarrow$ Zynthian Track/Chain 4:**
    - Create or select an Audio/FX Chain on Zynthian (e.g., Chain 4).
    - Open **Chain Options** (bold-press `SELECT` on the chain strip in Mixer view) $\rightarrow$ select **Audio In**.
-   - Uncheck `Input 1` and `Input 2` (Pisound) and check **`Input 11 (MC-101 Track 4 L)`** and **`Input 12 (MC-101 Track 4 R)`**.
+   - Uncheck `Input 1` and `Input 2` (Pisound) and check **`Input 11 (MC-101 Ch 4 L)`** and **`Input 12 (MC-101 Ch 4 R)`**.
    - Isolated audio from MC-101 Track 4 now streams directly into Zynthian Chain 4's effects and mixer fader.
 2. **Route Zynthian Track/Chain 1 $\rightarrow$ MC-101 Track 1 (or any MC-101 Track MFX):**
    - Select Chain 1 on Zynthian, open **Chain Options** $\rightarrow$ select **Audio Out**.
    - Under `> AUDIO OUTPUT`, check **`Outputs 5+6 (stereo)`** (which corresponds to `Output 5 (MC-101 PC IN L)` + `Output 6 (MC-101 PC IN R)`).
    - *(Optional)* Uncheck **`Main mixbus`** at the top of the list if you want Chain 1 isolated so it only goes into the MC-101 and does not double in Zynthian's Main mix.
    - On the MC-101 hardware, hold `[SHIFT]` + press `[TRACK SEL 1]` $\rightarrow$ `GEN` tab $\rightarrow$ set **`Insert = PC IN`** (or `PC IN L` / `PC IN R`). Zynthian Chain 1 now flows directly through MC-101 Track 1's MFX, 3-band EQ, and fader.
-3. **Route Zynthian Master (`Main`) $\rightarrow$ MC-101 `PC IN` or `Master In`:**
+3. **Route Zynthian Master (`Main`) $\rightarrow$ MC-101 `PC IN` or `Master`:**
    - Highlight the **`Main`** mixbus strip on the far right of Zynthian's Audio Mixer, open **Chain Options** $\rightarrow$ select **Audio Out**.
    - Check **`Outputs 3+4 (stereo)`** to send Zynthian Master into **MC-101 Master Return**, or check **`Outputs 5+6 (stereo)`** to send Zynthian Master into **MC-101 `PC IN`** (and uncheck `Outputs 1+2 (stereo)` if you do not want it on Pisound Out).
 4. **Route MC-101 Master $\rightarrow$ Zynthian Master / FX Chain:**
@@ -326,7 +334,7 @@ With Pisound as the primary 2-in / 2-out soundcard (`Inputs 1–2` and `Outputs 
 5. **Saving & Recalling Routings via Snapshots (`.zss`):**
    - Because `zynain_mc101` and `zynaout_mc101` are managed natively by `zynthian_autoconnect`, saving a **Snapshot** automatically stores all per-chain Audio In and Audio Out checkboxes and restores them on load.
 
-##### 4. Optional CLI Preset Router (`scripts/audio-flow.sh`)
+##### 5. Optional CLI Preset Router (`scripts/audio-flow.sh`)
 
 For quick command-line inspection or scripted JACK patching outside the GUI, [`scripts/audio-flow.sh`](scripts/audio-flow.sh) also works with the `zynain_mc101` / `zynaout_mc101` bridges:
 
