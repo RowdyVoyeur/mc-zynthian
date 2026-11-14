@@ -143,10 +143,10 @@ Use `alsa_in` and `alsa_out` to bridge the MC-101's hardware audio streams into 
 
 ```bash
 # Bridge 10 audio channels FROM MC-101 INTO JACK (Capture)
-alsa_in -j "zynain_mc101" -d hw:MC101,DEV=0 -r 44100 -p 64 -n 4 -c 10 &
+alsa_in -j "zynain_mc101" -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 10 &
 
 # Bridge 4 audio channels FROM JACK INTO MC-101 (Playback)
-alsa_out -j "zynaout_mc101" -d hw:MC101,DEV=0 -r 44100 -p 64 -n 4 -c 4 &
+alsa_out -j "zynaout_mc101" -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 4 &
 ```
 
 #### Complete Channel Topography

@@ -17,9 +17,13 @@ ALSA_CARD="hw:MC101,DEV=0"
 CAPTURE_CLIENT="zynain_mc101"
 PLAYBACK_CLIENT="zynaout_mc101"
 SAMPLE_RATE=44100
-DEFAULT_PERIOD_SIZE=64
+DEFAULT_PERIOD_SIZE=128
 PERIODS=4
 CUSTOM_CONFIG="/zynthian/config/zynthian_custom_config.sh"
+ZYN_PYTHON="/zynthian/venv/bin/python3"
+if [[ ! -x "$ZYN_PYTHON" ]]; then
+    ZYN_PYTHON="python3"
+fi
 
 IN_PID=""
 OUT_PID=""
@@ -65,7 +69,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 set_port_aliases() {
-    python3 - <<'PY'
+    "$ZYN_PYTHON" - <<'PY'
 import time
 import jack
 
@@ -126,12 +130,12 @@ while true; do
     stop_bridges
     sleep 0.5
 
-    # Match mc101-pisound period size (64 frames when JACK buffer <= 128; scale up if JACK buffer > 128)
+    # Use 128-frame period (512-frame ringbuffer with -n 4) when JACK buffer <= 128; scale up if JACK buffer > 128
     PERIOD_SIZE=$DEFAULT_PERIOD_SIZE
     if command -v jack_bufsize >/dev/null 2>&1; then
         JACK_BUF=$(jack_bufsize 2>/dev/null || echo 128)
         if [[ "$JACK_BUF" =~ ^[0-9]+$ ]] && (( JACK_BUF > 128 )); then
-            PERIOD_SIZE=$(( JACK_BUF / 2 ))
+            PERIOD_SIZE=$JACK_BUF
         fi
     fi
 

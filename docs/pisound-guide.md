@@ -22,8 +22,8 @@ The **Blokas Pisound** is an ultra-low-latency soundcard and MIDI interface desi
 | (:::) DIN IN    |  [PCM1804 ADC]                 [PCM5102A DAC]               | (:::) DIN OUT   |
 | Opto-Isolated   |  24-bit / 192 kHz              32-bit / 384 kHz             | High-Speed      |
 | 5-Pin MIDI      |                                                             | 5-Pin MIDI      |
-+-----------------+  [Dual Low-Jitter Oscillators] [SPI MIDI Transceiver]       +-----------------+
-                  |  22.5792 MHz / 24.576 MHz      (Jitter-Free DIN Clocking)   |
++-----------------+  [24.576 MHz Master Oscillator] [SPI MIDI Transceiver]      +-----------------+
+                  |  (48 / 96 / 192 kHz Native)     (Jitter-Free DIN Clocking)  |
                   |                                                             |
                   |  [The Button] (GPIO 17)        [40-Pin Raspberry Pi Header] |
                   +-------------------------------------------------------------+
@@ -40,10 +40,8 @@ The **Blokas Pisound** is an ultra-low-latency soundcard and MIDI interface desi
   - Dynamic Range / SNR: $102\text{ dB}$.
   - $\text{THD+N}$: $-96\text{ dB}$.
   - Fully differential analog front end with integrated anti-aliasing decimation filter.
-- **Dual Low-Jitter Master Clock Oscillators**:
-  - Unlike consumer soundcards that derive I2S audio clocks from the Raspberry Pi's internal PLL (which suffers from high jitter and fractional-divider noise), Pisound carries two onboard ultra-low-jitter quartz crystal oscillators:
-    - **$22.5792\text{ MHz}$**: Dedicated master clock for multiples of $44.1\text{ kHz}$ ($44.1, 88.2, 176.4\text{ kHz}$).
-    - **$24.5760\text{ MHz}$**: Dedicated master clock for multiples of $48.0\text{ kHz}$ ($48.0, 96.0, 192.0\text{ kHz}$).
+- **Dedicated Low-Jitter Master Clock Oscillator**:
+  - Unlike consumer soundcards that derive I2S audio clocks from the Raspberry Pi's internal PLL (which suffers from high jitter and fractional-divider noise), Pisound carries an onboard ultra-low-jitter **$24.5760\text{ MHz}$** quartz crystal oscillator supporting native hardware sample rates of **$48\text{ kHz}$, $96\text{ kHz}$, and $192\text{ kHz}$** (note: $44.1\text{ kHz}$ is not supported in hardware by Pisound).
   - Pisound operates in **I2S Master Mode**, driving the Raspberry Pi's I2S peripheral with clean, jitter-free bit-clock and frame-sync signals.
 
 ### 1.2 Analog Controls & Gain Staging
@@ -193,8 +191,6 @@ Real-time audio latency consists of three distinct mathematical metrics:
 | **$48000\text{ Hz}$** | **$64\text{ frames}$** | **$2$** | **$1.33\text{ ms}$** | **$2.67\text{ ms}$** | **$\approx 4.8 - 5.2\text{ ms}$** | **Ultra-Low Latency / Stage Solo Performance** |
 | **$48000\text{ Hz}$** | **$128\text{ frames}$**| **$2$** | **$2.67\text{ ms}$** | **$5.33\text{ ms}$** | **$\approx 8.8 - 9.2\text{ ms}$** | **Recommended Stage Default (Rock-solid)** |
 | **$48000\text{ Hz}$** | **$256\text{ frames}$**| **$2$** | **$5.33\text{ ms}$** | **$10.67\text{ ms}$**| **$\approx 16.8 - 17.2\text{ ms}$**| **Heavy Multitrack & Dense Multi-FX Chains** |
-| **$44100\text{ Hz}$** | **$64\text{ frames}$** | **$2$** | **$1.45\text{ ms}$** | **$2.90\text{ ms}$** | **$\approx 5.3 - 5.7\text{ ms}$** | **Optimal for Stage 2 & 3 (MC-101 / Teensy Sync)** |
-| **$44100\text{ Hz}$** | **$128\text{ frames}$**| **$2$** | **$2.90\text{ ms}$** | **$5.80\text{ ms}$** | **$\approx 9.6 - 10.0\text{ ms}$**| **Recommended Stage 2 & 3 Standard** |
 
 > [!TIP]
 > **Measuring True Round-Trip Latency:**
@@ -203,17 +199,15 @@ Real-time audio latency consists of three distinct mathematical metrics:
 > jack_iodelay
 > ```
 
-### 3.2 Sample Rate Strategy: 48 kHz vs 44.1 kHz
-- **Stage 1 (Pisound Standalone):** Running JACK at **$48000\text{ Hz}$** is the standard default for Zynthian synth engines (ZynAddSubFX, Pianoteq, Fluidsynth) and provides slightly lower buffer latency.
-- **Stage 2 & Stage 3 (Roland MC-101 & Teensy USB Audio):** **Switch Zynthian JACK to $44100\text{ Hz}$**.
+### 3.2 Sample Rate Strategy: Native 48 kHz with Asynchronous USB Bridging
+- **Pisound Native Sample Rates:** Because Pisound clocks the I2S bus from a hardware **$24.5760\text{ MHz}$** crystal oscillator, it strictly supports **$48000\text{ Hz}$, $96000\text{ Hz}$, and $192000\text{ Hz}$** (it does not support $44100\text{ Hz}$ natively).
+- **Bridging $44.1\text{ kHz}$ USB Devices (Roland MC-101 / Teensy):**
   - The Roland MC-101 operates fixed at $44.1\text{ kHz}$ in USB vendor mode ([`docs/mc101-guide.md`](mc101-guide.md)).
-  - Teensy 4.1 USB Audio runs fixed at 16-bit / $44.1\text{ kHz}$ ([`docs/teensy-guide.md`](teensy-guide.md)).
-  - Pisound features a dedicated onboard **$22.5792\text{ MHz}$** quartz oscillator for native, zero-jitter $44.1\text{ kHz}$ operation.
-  - Running JACK at $44.1\text{ kHz}$ eliminates continuous CPU-heavy sample-rate conversion (resampling) across all USB audio bridges, preventing drift artifacts and reducing CPU load.
+  - Keep Zynthian JACK running at Pisound's native **$48000\text{ Hz}$** (`Buffer Size: 128`, `Periods: 2`), and bridge the MC-101 using `alsa_in` / `alsa_out` at `-r 44100 -p 128 -n 4` (providing a 512-frame ALSA ringbuffer so 128-frame JACK cycles never overrun the USB buffer).
 
 ### 3.3 Configuring JACK in Zynthian Webconf
 1. Navigate to **Hardware** $\rightarrow$ **Audio** in Zynthian Webconf.
-2. Set **Jack Sample Rate** to **`48000`** (Stage 1) or **`44100`** (Stages 2 & 3).
+2. Set **Jack Sample Rate** to **`48000`**.
 3. Set **Jack Buffer Size** to **`128`** (recommended baseline: eliminates XRUNs, achieves rock-solid $5.3\text{ ms}$ output latency) or **`64`** (ultra-low latency, but prone to XRUNs under UI load).
 4. Set **Jack Periods** to **`2`**.
 5. Click **Save** to restart JACK with the new settings.
