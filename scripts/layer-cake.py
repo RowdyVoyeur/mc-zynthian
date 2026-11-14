@@ -95,8 +95,8 @@ ACTION_KEYS: Dict[str, str] = {"KEY_A": "a", "KEY_B": "b", "KEY_C": "c", "KEY_D"
 # ==============================================================================
 
 ZYNTHIAN_ENVARS_FILE = "/zynthian/config/zynthian_envars.sh"
-OVERLAY_HEIGHT: Optional[int] = None      # None = auto (screen height / 10)
-OVERLAY_FONT_SIZE: Optional[int] = None   # None = ZYNTHIAN_UI_FONT_SIZE
+OVERLAY_HEIGHT: Optional[int] = None      # None = same as Zynthian topbar height
+OVERLAY_FONT_SIZE: Optional[int] = None   # None = same as Zynthian topbar font size
 OVERLAY_DURATION_MS = 1800
 OVERLAY_FG = "#ffffff"
 OVERLAY_BG = "#000000"
@@ -164,12 +164,26 @@ class TitleBarOverlay:
                 time.sleep(1.0)
 
         try:
-            font_family = read_zynthian_envar("ZYNTHIAN_UI_FONT_FAMILY", "Audiowide")
-            font_size = OVERLAY_FONT_SIZE or int(read_zynthian_envar("ZYNTHIAN_UI_FONT_SIZE", "14"))
-
             screen_w = self.root.winfo_screenwidth()
             screen_h = self.root.winfo_screenheight()
-            height = OVERLAY_HEIGHT or max(24, screen_h // 10)
+
+            # Same topbar geometry/font rules as zyngui/zynthian_gui_config.py
+            font_family = read_zynthian_envar("ZYNTHIAN_UI_FONT_FAMILY", "Audiowide")
+            try:
+                ui_font_size = int(read_zynthian_envar("ZYNTHIAN_UI_FONT_SIZE", "16"))
+            except ValueError:
+                ui_font_size = 16
+            if not ui_font_size:
+                ui_font_size = int(screen_w / 40)
+            if screen_w >= 800:
+                topbar_height = screen_h // 12
+                topbar_fs = int(1.5 * ui_font_size)
+            else:
+                topbar_height = screen_h // 10
+                topbar_fs = int(1.1 * ui_font_size)
+
+            font_size = OVERLAY_FONT_SIZE or topbar_fs
+            height = OVERLAY_HEIGHT or topbar_height
 
             self.root.title("LayerCakeOverlay")
             self.root.overrideredirect(True)
