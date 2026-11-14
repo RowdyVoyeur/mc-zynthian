@@ -96,7 +96,8 @@ ACTION_KEYS: Dict[str, str] = {"KEY_A": "a", "KEY_B": "b", "KEY_C": "c", "KEY_D"
 
 ZYNTHIAN_ENVARS_FILE = "/zynthian/config/zynthian_envars.sh"
 OVERLAY_HEIGHT: Optional[int] = None      # None = same as Zynthian topbar height
-OVERLAY_FONT_SIZE: Optional[int] = 10   # None = same as Zynthian topbar font size
+OVERLAY_FONT_SIZE: Optional[int] = 16     # None = same as Zynthian topbar font size
+OVERLAY_TEXT_Y_OFFSET = -4                # Vertical pixel nudge (negative moves text up)
 OVERLAY_DURATION_MS = 1800
 OVERLAY_FG = "#ffffff"
 OVERLAY_BG = "#000000"
@@ -118,13 +119,13 @@ def read_zynthian_envar(name: str, default: str) -> str:
 
 
 def format_layer_line(layer_idx: int, layer: Dict) -> str:
-    """Build the single overlay line, e.g. '1: [A] Knob 2 | [B] Knob 4 | ...'."""
+    """Build the single overlay line, e.g. '1:   [A] Knob 2   |   [B] Knob 4   |   ...'."""
     labels = layer.get("labels", {})
     parts = []
     for k in ("a", "b", "c", "d"):
         label = labels.get(k, layer["keys"].get(k, k).upper())
         parts.append(f"[{k.upper()}] {label}")
-    return f"{layer_idx + 1}: " + " | ".join(parts)
+    return f"{layer_idx + 1}:   " + "   |   ".join(parts)
 
 
 # ==============================================================================
@@ -198,9 +199,12 @@ class TitleBarOverlay:
                 fg=OVERLAY_FG,
                 bg=OVERLAY_BG,
                 anchor="w",
-                padx=8,
+                padx=0,
+                pady=0,
+                borderwidth=0,
+                highlightthickness=0,
             )
-            self.label.pack(fill=tk.BOTH, expand=True)
+            self.label.place(x=10, rely=0.5, y=OVERLAY_TEXT_Y_OFFSET, anchor="w")
 
             self.root.withdraw()
             self.enabled = True
