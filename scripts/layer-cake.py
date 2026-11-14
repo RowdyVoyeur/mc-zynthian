@@ -2,359 +2,348 @@
 # ==============================================================================
 # layer-cake.py: SayoDevice 12-Key Virtual Layer Manager & OSD Daemon
 # ==============================================================================
-# Intercepts SayoDevice physical keystrokes, provides 6 customizable software
-# layers, handles Shift+Up / Shift+Down layer cycling, and renders a native
-# floating On-Screen Display (OSD) notification banner directly on Zynthian's screen.
+# Intercepts SayoDevice physical keystrokes and provides 8 directly selectable
+# software layers. Holding Shift and pressing a key jumps straight to a layer:
+#
+#   Shift + Up    -> Layer 1        Shift + A -> Layer 5
+#   Shift + Down  -> Layer 2        Shift + B -> Layer 6
+#   Shift + Left  -> Layer 3        Shift + C -> Layer 7
+#   Shift + Right -> Layer 4        Shift + D -> Layer 8
+#
+# Arrow keys always pass through unchanged. Physical keys A, B, C, D are
+# translated to the keys defined for the active layer. A single-line overlay
+# covering Zynthian's title bar shows the active layer when Shift is pressed
+# or when the layer changes.
 # ==============================================================================
 
 import argparse
 import logging
 import os
 import queue
+import re
 import select
 import sys
 import threading
 import time
 from typing import Dict, List, Optional
 
-# Setup Logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] [MacroPad] %(message)s",
+    format="%(asctime)s [%(levelname)s] [LayerCake] %(message)s",
     datefmt="%H:%M:%S",
 )
-logger = logging.getLogger("MacroPad")
+logger = logging.getLogger("LayerCake")
 
 # ==============================================================================
-# Configurable Software Layers
+# Layer Configuration (edit here)
 # ==============================================================================
-# Each layer defines:
-#   - 'name': Reference title displayed in the on-screen banner
-#   - 'keys': Mapping from physical keys ('a', 'b', 'c', 'd') to emitted keys
-#   - 'labels': Brief human-readable description of each action shown on the OSD
+# 'keys'   : what each physical key (a, b, c, d) emits on this layer
+# 'labels' : short description shown on the overlay
+# Layers are listed in order: index 0 = Layer 1 ... index 7 = Layer 8.
 # ==============================================================================
 
 LAYERS: List[Dict] = [
-    {
-        "name": "Core Navigation & Transport",
+    {   # Layer 1 (Shift + Up)
         "keys": {"a": "a", "b": "b", "c": "c", "d": "d"},
-        "labels": {
-            "a": "Back/Menu",
-            "b": "Select",
-            "c": "Chain Opt",
-            "d": "Mixer View",
-        },
+        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C1", "d": "Btn D1"},
     },
-    {
-        "name": "Context Actions & Recording",
-        "keys": {"a": "e", "b": "f", "c": "g", "d": "h"},
-        "labels": {
-            "a": "Bold Select",
-            "b": "Panic (All Off)",
-            "c": "Snapshots",
-            "d": "Rec Audio",
-        },
+    {   # Layer 2 (Shift + Down)
+        "keys": {"a": "a", "b": "b", "c": "e", "d": "f"},
+        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C2", "d": "Btn D2"},
     },
-    {
-        "name": "Direct Screen Jumps",
-        "keys": {"a": "i", "b": "j", "c": "k", "d": "l"},
-        "labels": {
-            "a": "Audio Mixer",
-            "b": "Pattern Edit",
-            "c": "Admin/Settings",
-            "d": "ALSA Levels",
-        },
+    {   # Layer 3 (Shift + Left)
+        "keys": {"a": "a", "b": "b", "c": "g", "d": "h"},
+        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C3", "d": "Btn D3"},
     },
-    {
-        "name": "Preset & Coarse Navigation",
-        "keys": {"a": "m", "b": "n", "c": "o", "d": "p"},
-        "labels": {
-            "a": "Prev Preset",
-            "b": "Next Preset",
-            "c": "Page Up (+10)",
-            "d": "Page Down (-10)",
-        },
+    {   # Layer 4 (Shift + Right)
+        "keys": {"a": "a", "b": "b", "c": "i", "d": "j"},
+        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C4", "d": "Btn D4"},
     },
-    {
-        "name": "Performance & System Utilities",
-        "keys": {"a": "q", "b": "r", "c": "s", "d": "t"},
-        "labels": {
-            "a": "Tap Tempo",
-            "b": "Metronome",
-            "c": "Toggle Alt",
-            "d": "Power Menu",
-        },
+    {   # Layer 5 (Shift + A)
+        "keys": {"a": "a", "b": "b", "c": "k", "d": "l"},
+        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C5", "d": "Btn D5"},
     },
-    {
-        "name": "Sequencer & Transport",
-        "keys": {"a": "u", "b": "v", "c": "w", "d": "x"},
-        "labels": {
-            "a": "Play / Stop",
-            "b": "MIDI Record",
-            "c": "Prev Track",
-            "d": "Next Track",
-        },
+    {   # Layer 6 (Shift + B)
+        "keys": {"a": "a", "b": "b", "c": "m", "d": "n"},
+        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C6", "d": "Btn D6"},
+    },
+    {   # Layer 7 (Shift + C) - secondary / parameter editing
+        "keys": {"a": "o", "b": "p", "c": "q", "d": "r"},
+        "labels": {"a": "Edit A7", "b": "Edit B7", "c": "Edit C7", "d": "Edit D7"},
+    },
+    {   # Layer 8 (Shift + D) - secondary / parameter editing
+        "keys": {"a": "s", "b": "t", "c": "u", "d": "v"},
+        "labels": {"a": "Edit A8", "b": "Edit B8", "c": "Edit C8", "d": "Edit D8"},
     },
 ]
 
-# Physical hardware key identifiers
-KEY_NAME_MAP = {
-    "a": "KEY_A",
-    "b": "KEY_B",
-    "c": "KEY_C",
-    "d": "KEY_D",
-}
+# Physical key (evdev name) used together with Shift to select each layer
+LAYER_SELECT_KEYS: List[str] = [
+    "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT",
+    "KEY_A", "KEY_B", "KEY_C", "KEY_D",
+]
+
+# Physical action keys and their logical names
+ACTION_KEYS: Dict[str, str] = {"KEY_A": "a", "KEY_B": "b", "KEY_C": "c", "KEY_D": "d"}
 
 # ==============================================================================
-# Native On-Screen Display (OSD) Banner using Tkinter on DISPLAY=:0
+# Overlay appearance
+# ==============================================================================
+# Font family and size are read from Zynthian's config so the overlay matches
+# the native title bar. Set OVERLAY_HEIGHT / OVERLAY_FONT_SIZE to a number to
+# override the automatic values.
 # ==============================================================================
 
-class NativeOSDBanner:
-    """Renders a sleek, non-intrusive floating OSD banner on Zynthian's LCD display."""
+ZYNTHIAN_ENVARS_FILE = "/zynthian/config/zynthian_envars.sh"
+OVERLAY_HEIGHT: Optional[int] = None      # None = auto (screen height / 10)
+OVERLAY_FONT_SIZE: Optional[int] = None   # None = ZYNTHIAN_UI_FONT_SIZE
+OVERLAY_DURATION_MS = 1800
+OVERLAY_FG = "#ffffff"
+OVERLAY_BG = "#000000"
+
+
+def read_zynthian_envar(name: str, default: str) -> str:
+    """Return a Zynthian UI setting from the environment or zynthian_envars.sh."""
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        with open(ZYNTHIAN_ENVARS_FILE, "r") as fh:
+            for line in fh:
+                m = re.match(rf'^\s*export\s+{name}\s*=\s*["\']?([^"\'\n#]*)', line)
+                if m and m.group(1).strip():
+                    return m.group(1).strip()
+    except OSError:
+        pass
+    return default
+
+
+def format_layer_line(layer_idx: int, layer: Dict) -> str:
+    """Build the single overlay line, e.g. '1: [A] Knob 2 | [B] Knob 4 | ...'."""
+    labels = layer.get("labels", {})
+    parts = []
+    for k in ("a", "b", "c", "d"):
+        label = labels.get(k, layer["keys"].get(k, k).upper())
+        parts.append(f"[{k.upper()}] {label}")
+    return f"{layer_idx + 1}: " + " | ".join(parts)
+
+
+# ==============================================================================
+# Title Bar Overlay (Tkinter on DISPLAY=:0)
+# ==============================================================================
+
+class TitleBarOverlay:
+    """Single-line overlay drawn over Zynthian's title bar."""
 
     def __init__(self, display_str: str = ":0") -> None:
         self.enabled = False
         self.root = None
-        self.title_label = None
-        self.sub_label = None
+        self.label = None
         self.hide_timer_id = None
         self.event_queue: queue.Queue = queue.Queue()
 
         if not display_str:
-            self.enabled = False
             return
-
         os.environ["DISPLAY"] = display_str
 
         try:
             import tkinter as tk
             self.tk = tk
         except ImportError:
-            logger.warning("python3-tk is not installed. Falling back to console logging.")
-            self.enabled = False
+            logger.warning("python3-tk is not installed. Overlay disabled.")
             return
 
-        # Boot retry loop: wait for X11 / startx to be ready on system startup
+        # Wait for X11 to come up when started at boot
         for attempt in range(20):
             try:
-                self.root = self.tk.Tk()
+                self.root = tk.Tk()
                 break
             except Exception as exc:
-                if attempt < 19:
-                    time.sleep(1.0)
-                else:
-                    logger.warning("GUI display not available on %s (%s). Falling back to console logging.", display_str, exc)
-                    self.enabled = False
+                if attempt == 19:
+                    logger.warning("Display %s not available (%s). Overlay disabled.", display_str, exc)
                     return
+                time.sleep(1.0)
 
         try:
-            self.root.title("ZynthianMacroOSD")
+            font_family = read_zynthian_envar("ZYNTHIAN_UI_FONT_FAMILY", "Audiowide")
+            font_size = OVERLAY_FONT_SIZE or int(read_zynthian_envar("ZYNTHIAN_UI_FONT_SIZE", "14"))
+
+            screen_w = self.root.winfo_screenwidth()
+            screen_h = self.root.winfo_screenheight()
+            height = OVERLAY_HEIGHT or max(24, screen_h // 10)
+
+            self.root.title("LayerCakeOverlay")
             self.root.overrideredirect(True)
             self.root.attributes("-topmost", True)
-            self.root.configure(bg="#000000")
+            self.root.configure(bg=OVERLAY_BG)
+            self.root.geometry(f"{screen_w}x{height}+0+0")
 
-            # Screen geometry: full horizontal width, aligned from title bar down to channel pan bars
-            screen_width = self.root.winfo_screenwidth()
-            banner_width = screen_width
-            banner_height = 86
-            banner_x = 0
-            banner_y = 36  # Placed directly beneath the 36px title bar
-
-            self.root.geometry(f"{banner_width}x{banner_height}+{banner_x}+{banner_y}")
-
-            # Seamless full-width container matching native Zynthian background
-            container = self.tk.Frame(
+            self.label = tk.Label(
                 self.root,
-                bg="#000000",
-                highlightthickness=0,
-                padx=20,
-                pady=10,
-            )
-            container.pack(fill=self.tk.BOTH, expand=True)
-
-            self.title_label = self.tk.Label(
-                container,
                 text="",
-                font=("DejaVu Sans", 14, "bold"),
-                fg="#ffffff",
-                bg="#000000",
-                anchor="center",
+                font=(font_family, font_size),
+                fg=OVERLAY_FG,
+                bg=OVERLAY_BG,
+                anchor="w",
+                padx=8,
             )
-            self.title_label.pack(fill=self.tk.X, pady=(0, 4))
+            self.label.pack(fill=tk.BOTH, expand=True)
 
-            self.sub_label = self.tk.Label(
-                container,
-                text="",
-                font=("DejaVu Sans", 13),
-                fg="#ffffff",
-                bg="#000000",
-                anchor="center",
-            )
-            self.sub_label.pack(fill=self.tk.X, pady=(2, 0))
-
-            self.root.withdraw()  # Start hidden
+            self.root.withdraw()
             self.enabled = True
-            logger.info("Native Tkinter OSD display initialized on %s (%dx%d at y=%d)", display_str, banner_width, banner_height, banner_y)
-
+            logger.info("Overlay ready on %s (%dx%d, font '%s' %d)",
+                        display_str, screen_w, height, font_family, font_size)
         except Exception as exc:
-            logger.warning("Error configuring GUI window on %s (%s). Falling back to console logging.", display_str, exc)
+            logger.warning("Could not configure overlay (%s). Overlay disabled.", exc)
             self.enabled = False
 
-    def notify_layer(self, layer_idx: int, layer_data: dict) -> None:
-        """Pushes a layer change request to the GUI event queue."""
-        self.event_queue.put((layer_idx, layer_data))
+    def notify_layer(self, layer_idx: int, layer: Dict) -> None:
+        self.event_queue.put((layer_idx, layer))
 
-    def _show_banner(self, layer_idx: int, layer_data: dict) -> None:
-        if not self.enabled or not self.root:
-            logger.debug("ACTIVE LAYER: [%d] %s", layer_idx, layer_data.get("name", ""))
-            return
-
-        name = layer_data.get("name", f"Layer {layer_idx}")
-        title_text = f"Layer {layer_idx}: {name}"
-        labels = layer_data.get("labels", {})
-        keys = layer_data.get("keys", {})
-
-        # Format subtitle string showing key bindings and descriptions
-        sub_items = []
-        for src_key in ["a", "b", "c", "d"]:
-            out_key = keys.get(src_key, src_key).upper()
-            label = labels.get(src_key, "")
-            if label:
-                sub_items.append(f"[{out_key}] {label}")
-            else:
-                sub_items.append(f"[{out_key}]")
-        sub_text = "    ".join(sub_items)
-
-        self.title_label.config(text=title_text)
-        self.sub_label.config(text=sub_text)
-
-        # Cancel any pending hide timers and reveal window
+    def _show(self, layer_idx: int, layer: Dict) -> None:
+        self.label.config(text=format_layer_line(layer_idx, layer))
         if self.hide_timer_id is not None:
             self.root.after_cancel(self.hide_timer_id)
-
         self.root.deiconify()
         self.root.lift()
+        self.hide_timer_id = self.root.after(OVERLAY_DURATION_MS, self._hide)
 
-        # Auto-dismiss after 1800 ms (1.8 seconds)
-        self.hide_timer_id = self.root.after(1800, self._hide_banner)
-
-    def _hide_banner(self) -> None:
-        if self.enabled and self.root:
-            self.root.withdraw()
-            self.hide_timer_id = None
+    def _hide(self) -> None:
+        self.root.withdraw()
+        self.hide_timer_id = None
 
     def run_loop(self) -> None:
-        """Main Tkinter event processing loop."""
-        if not self.enabled or not self.root:
-            return
-
         def process_queue():
             try:
                 while True:
-                    layer_idx, layer_data = self.event_queue.get_nowait()
-                    self._show_banner(layer_idx, layer_data)
+                    layer_idx, layer = self.event_queue.get_nowait()
+                    self._show(layer_idx, layer)
             except queue.Empty:
                 pass
-            self.root.after(40, process_queue)
+            self.root.after(30, process_queue)
 
-        self.root.after(40, process_queue)
+        self.root.after(30, process_queue)
         self.root.mainloop()
 
 
 # ==============================================================================
-# Hardware Key Interceptor & Virtual Keyboard Manager
+# Key Interceptor & Virtual Keyboard
 # ==============================================================================
 
-class MacroLayerManager:
-    """Grabs SayoDevice events and re-emits transformed keys via Linux uinput."""
+class LayerManager:
+    """Grabs SayoDevice events and re-emits translated keys via uinput."""
 
-    def __init__(self, layers: List[Dict], osd: NativeOSDBanner, device_query: str = "SayoDevice") -> None:
-        self.layers = layers
-        self.num_layers = len(layers)
-        self.current_layer_idx = 0
-        self.osd = osd
-        self.device_query = device_query.lower()
-        self.shift_held = False
-
-        self.evdev = None
-        self.ecodes = None
-        self.device = None
-        self.uinput = None
-
-        self._load_evdev()
-
-    def _load_evdev(self) -> None:
+    def __init__(self, layers: List[Dict], overlay: TitleBarOverlay, device_query: str = "SayoDevice") -> None:
         try:
             import evdev
             from evdev import ecodes
-            self.evdev = evdev
-            self.ecodes = ecodes
         except ImportError:
-            logger.error("python3-evdev is not installed! Run: apt-get install -y python3-evdev")
+            logger.error("python3-evdev is not installed. Run: apt-get install -y python3-evdev")
             sys.exit(1)
 
-    def _find_sayodevices(self) -> List[object]:
-        """Scans /dev/input devices and returns ALL input endpoints associated with SayoDevice."""
-        devices = [self.evdev.InputDevice(path) for path in self.evdev.list_devices()]
+        self.evdev = evdev
+        self.ecodes = ecodes
+        self.layers = layers
+        self.overlay = overlay
+        self.device_query = device_query.lower()
+        self.current_layer = 0
+        self.shift_held = False
+        self.devices: List = []
+        self.uinput = None
+
+        self.shift_codes = {ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT}
+        self.layer_select = {getattr(ecodes, name): idx for idx, name in enumerate(LAYER_SELECT_KEYS)}
+        self.action_codes = {getattr(ecodes, name): logical for name, logical in ACTION_KEYS.items()}
+
+        # Physical keys whose press was used to switch layers (release is swallowed)
+        self.swallowed: set = set()
+        # Physical key -> emitted key, so a release always matches its press
+        self.active_outputs: Dict[int, int] = {}
+
+    def _find_sayodevices(self) -> List:
         matches = []
-
-        logger.info("Scanning %d input devices for SayoDevice hardware...", len(devices))
-        for dev in devices:
-            name_lower = dev.name.lower()
-            phys_lower = dev.phys.lower()
-            is_match = (self.device_query in name_lower or "8089" in phys_lower or "8089" in name_lower)
-
-            if is_match:
-                caps = dev.capabilities()
-                if self.ecodes.EV_KEY in caps:
+        for path in self.evdev.list_devices():
+            dev = self.evdev.InputDevice(path)
+            name = dev.name.lower()
+            phys = (dev.phys or "").lower()
+            if self.device_query in name or "8089" in phys or "8089" in name:
+                if self.ecodes.EV_KEY in dev.capabilities():
                     matches.append(dev)
-                    logger.info("  -> Matched SayoDevice endpoint: '%s' (%s at %s)", dev.name, dev.path, dev.phys)
-
+                    logger.info("Matched SayoDevice endpoint: '%s' (%s)", dev.name, dev.path)
         return matches
 
-    def _create_virtual_keyboard(self) -> object:
-        """Creates a virtual uinput keyboard capable of emitting all alphanumeric keys & arrows."""
-        # 1. Register all alphabet keys A through Z explicitly by name (Linux scancodes are QWERTY, not alphabetic)
-        keys_to_support = [
-            getattr(self.ecodes, f"KEY_{c.upper()}")
-            for c in "abcdefghijklmnopqrstuvwxyz"
+    def _create_virtual_keyboard(self):
+        keys = [getattr(self.ecodes, f"KEY_{c.upper()}") for c in "abcdefghijklmnopqrstuvwxyz"]
+        keys += [
+            self.ecodes.KEY_UP, self.ecodes.KEY_DOWN, self.ecodes.KEY_LEFT, self.ecodes.KEY_RIGHT,
+            self.ecodes.KEY_LEFTSHIFT, self.ecodes.KEY_RIGHTSHIFT,
+            self.ecodes.KEY_ENTER, self.ecodes.KEY_ESC, self.ecodes.KEY_SPACE,
+            self.ecodes.KEY_BACKSPACE, self.ecodes.KEY_TAB,
         ]
-        # 2. Add directional arrows, modifiers, and navigation keys
-        keys_to_support.extend([
-            self.ecodes.KEY_UP,
-            self.ecodes.KEY_DOWN,
-            self.ecodes.KEY_LEFT,
-            self.ecodes.KEY_RIGHT,
-            self.ecodes.KEY_LEFTSHIFT,
-            self.ecodes.KEY_RIGHTSHIFT,
-            self.ecodes.KEY_ENTER,
-            self.ecodes.KEY_ESC,
-            self.ecodes.KEY_SPACE,
-            self.ecodes.KEY_BACKSPACE,
-            self.ecodes.KEY_TAB,
-        ])
-
-        cap = {
-            self.ecodes.EV_KEY: sorted(list(set(keys_to_support))),
-        }
-        uinput = self.evdev.UInput(cap, name="Zynthian-MacroPad-Virtual", version=0x1)
-        logger.info("Virtual keyboard created: Zynthian-MacroPad-Virtual (%d keys registered)", len(cap[self.ecodes.EV_KEY]))
+        cap = {self.ecodes.EV_KEY: sorted(set(keys))}
+        uinput = self.evdev.UInput(cap, name="Zynthian-LayerCake-Virtual", version=0x1)
+        logger.info("Virtual keyboard created (%d keys)", len(cap[self.ecodes.EV_KEY]))
         return uinput
 
-    def switch_layer(self, direction: int) -> None:
-        """Cycles active software layer and notifies the user via on-screen OSD."""
-        self.current_layer_idx = (self.current_layer_idx + direction) % self.num_layers
-        layer_data = self.layers[self.current_layer_idx]
-        logger.debug("Layer switched -> [%d] %s", self.current_layer_idx, layer_data.get("name", ""))
-        self.osd.notify_layer(self.current_layer_idx, layer_data)
+    def _emit(self, code: int, value: int) -> None:
+        self.uinput.write(self.ecodes.EV_KEY, code, value)
+        self.uinput.syn()
+
+    def _show_current(self) -> None:
+        self.overlay.notify_layer(self.current_layer, self.layers[self.current_layer])
+
+    def _handle(self, code: int, value: int) -> None:
+        # value: 1 = press, 0 = release, 2 = autorepeat
+
+        # Shift: never forwarded; pressing it shows the current layer
+        if code in self.shift_codes:
+            self.shift_held = value != 0
+            if value == 1:
+                self._show_current()
+            return
+
+        # Release / repeat of a key that was consumed for layer selection
+        if code in self.swallowed:
+            if value == 0:
+                self.swallowed.discard(code)
+            return
+
+        # Shift + select key -> jump directly to layer
+        if self.shift_held and value == 1 and code in self.layer_select:
+            self.current_layer = self.layer_select[code]
+            self.swallowed.add(code)
+            logger.debug("Layer -> %d", self.current_layer + 1)
+            self._show_current()
+            return
+
+        # Key being released/repeated that was translated on press
+        if code in self.active_outputs and value != 1:
+            out = self.active_outputs[code]
+            if value == 0:
+                del self.active_outputs[code]
+            self._emit(out, value)
+            return
+
+        # Action keys A-D: translate through the active layer
+        if code in self.action_codes and value == 1:
+            logical = self.action_codes[code]
+            target = self.layers[self.current_layer]["keys"].get(logical, logical)
+            out = getattr(self.ecodes, f"KEY_{target.upper()}", None)
+            if out is None:
+                logger.warning("Layer %d: invalid key '%s' for '%s'", self.current_layer + 1, target, logical)
+                return
+            self.active_outputs[code] = out
+            logger.debug("Layer %d: %s -> %s", self.current_layer + 1, logical, target)
+            self._emit(out, value)
+            return
+
+        # Everything else (arrows, etc.) passes through unchanged
+        self._emit(code, value)
 
     def run(self) -> None:
-        """Main worker loop monitoring all SayoDevice connections and event streams."""
         self.uinput = self._create_virtual_keyboard()
 
         while True:
-            # 1. Connect and grab ALL SayoDevice endpoints
-            logger.info("Searching for SayoDevice hardware matching '%s'...", self.device_query)
+            logger.info("Searching for SayoDevice matching '%s'...", self.device_query)
             devs = self._find_sayodevices()
             while not devs:
                 time.sleep(2.0)
@@ -364,162 +353,81 @@ class MacroLayerManager:
             for d in self.devices:
                 try:
                     d.grab()
-                    logger.info("Grabbed exclusively: '%s' (%s)", d.name, d.path)
                 except Exception as exc:
-                    logger.warning("Could not grab %s exclusively: %s (will monitor)", d.name, exc)
+                    logger.warning("Could not grab %s: %s", d.name, exc)
+            logger.info("Monitoring %d endpoint(s). Ready.", len(self.devices))
 
-            logger.info("Monitoring %d SayoDevice endpoint(s) simultaneously. Ready for input.", len(self.devices))
-
-            # 2. Process keystrokes using select across all endpoints
             try:
                 while True:
-                    r, _, _ = select.select(self.devices, [], [])
-                    for dev in r:
+                    ready, _, _ = select.select(self.devices, [], [])
+                    for dev in ready:
                         for event in dev.read():
-                            if event.type != self.ecodes.EV_KEY:
-                                continue
-
-                            key_code = event.code
-                            key_value = event.value  # 1 = Press (down), 0 = Release (up), 2 = Repeat
-
-                            # --- Track Shift Modifier (Key 4) ---
-                            if key_code in (self.ecodes.KEY_LEFTSHIFT, self.ecodes.KEY_RIGHTSHIFT):
-                                self.shift_held = (key_value != 0)
-                                if key_value == 1:  # Downstroke: preview current active layer immediately
-                                    self.osd.notify_layer(self.current_layer_idx, self.layers[self.current_layer_idx])
-                                logger.debug("Key 4 (Shift) %s", "HELD [Layer Switch Armed]" if self.shift_held else "RELEASED")
-                                continue
-
-                            # --- Handle Layer Switching: Shift + Up (Next Layer) ---
-                            if self.shift_held and key_code == self.ecodes.KEY_UP:
-                                if key_value == 1:  # Downstroke trigger
-                                    logger.debug("Shift + Up triggered! Switching to next layer...")
-                                    self.switch_layer(+1)
-                                continue
-
-                            # --- Handle Layer Switching: Shift + Down (Previous Layer) ---
-                            if self.shift_held and key_code == self.ecodes.KEY_DOWN:
-                                if key_value == 1:  # Downstroke trigger
-                                    logger.debug("Shift + Down triggered! Switching to previous layer...")
-                                    self.switch_layer(-1)
-                                continue
-
-                            # --- Handle Universal Navigation: Shift + Left (Escape / No / Back) ---
-                            if self.shift_held and key_code == self.ecodes.KEY_LEFT:
-                                if key_value == 1:
-                                    logger.debug("Shift + Left -> emitted KEY_ESC (Escape)")
-                                self.uinput.write(self.ecodes.EV_KEY, self.ecodes.KEY_ESC, key_value)
-                                self.uinput.syn()
-                                continue
-
-                            # --- Handle Universal Navigation: Shift + Right (Enter / Yes / Select) ---
-                            if self.shift_held and key_code == self.ecodes.KEY_RIGHT:
-                                if key_value == 1:
-                                    logger.debug("Shift + Right -> emitted KEY_ENTER (Enter)")
-                                self.uinput.write(self.ecodes.EV_KEY, self.ecodes.KEY_ENTER, key_value)
-                                self.uinput.syn()
-                                continue
-
-                            # --- Dynamic Action Cluster: Keys 5, 6, 11, 12 (a, b, c, d) ---
-                            char_code = None
-                            if key_code == self.ecodes.KEY_A:
-                                char_code = "a"
-                            elif key_code == self.ecodes.KEY_B:
-                                char_code = "b"
-                            elif key_code == self.ecodes.KEY_C:
-                                char_code = "c"
-                            elif key_code == self.ecodes.KEY_D:
-                                char_code = "d"
-
-                            if char_code is not None:
-                                # Translate through active layer
-                                active_layer = self.layers[self.current_layer_idx]
-                                target_char = active_layer["keys"].get(char_code, char_code)
-                                target_keycode_name = f"KEY_{target_char.upper()}"
-                                target_keycode = getattr(self.ecodes, target_keycode_name, None)
-
-                                if target_keycode is not None:
-                                    if key_value == 1:
-                                        logger.debug("Action key '%s' -> emitted '%s' (Layer %d)", char_code, target_char, self.current_layer_idx)
-                                    self.uinput.write(self.ecodes.EV_KEY, target_keycode, key_value)
-                                    self.uinput.syn()
-                                continue
-
-                            # --- Directional Arrow Keys & Others: Pass Through Cleanly ---
-                            self.uinput.write(self.ecodes.EV_KEY, key_code, key_value)
-                            self.uinput.syn()
-
+                            if event.type == self.ecodes.EV_KEY:
+                                self._handle(event.code, event.value)
             except (OSError, self.evdev.device.DeviceError) as exc:
-                logger.warning("SayoDevice communication error: %s. Re-detecting in 2s...", exc)
+                logger.warning("SayoDevice error: %s. Re-detecting in 2s...", exc)
                 for d in self.devices:
                     try:
                         d.ungrab()
                     except Exception:
                         pass
                 self.devices = []
+                self.shift_held = False
+                self.swallowed.clear()
+                self.active_outputs.clear()
                 time.sleep(2.0)
 
 
 # ==============================================================================
-# Entry Point & CLI
+# Entry Point
 # ==============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="SayoDevice 12-Key Virtual Layer Daemon with OSD for Zynthian")
-    parser.add_argument("--query", "-q", default="SayoDevice", help="Device name query to match (default: 'SayoDevice')")
-    parser.add_argument("--display", "-d", default=":0", help="X11 DISPLAY for OSD popup (default: ':0')")
-    parser.add_argument("--no-gui", action="store_true", help="Disable graphical Tkinter OSD (console output only)")
-    parser.add_argument("--test-layers", action="store_true", help="Print verified layer structure and exit")
-    parser.add_argument("--list-devices", "-l", action="store_true", help="List all connected Linux input devices and exit")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose debug logging of all keystrokes")
+    parser = argparse.ArgumentParser(description="SayoDevice 8-layer virtual keyboard daemon for Zynthian")
+    parser.add_argument("--query", "-q", default="SayoDevice", help="Device name to match (default: SayoDevice)")
+    parser.add_argument("--display", "-d", default=":0", help="X11 display for the overlay (default: :0)")
+    parser.add_argument("--no-gui", action="store_true", help="Disable the overlay")
+    parser.add_argument("--test-layers", action="store_true", help="Print the layer table and exit")
+    parser.add_argument("--list-devices", "-l", action="store_true", help="List input devices and exit")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Log every translated keystroke")
     args = parser.parse_args()
 
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG if args.verbose else logging.INFO)
+
+    if len(LAYERS) != len(LAYER_SELECT_KEYS):
+        logger.error("LAYERS has %d entries but LAYER_SELECT_KEYS has %d", len(LAYERS), len(LAYER_SELECT_KEYS))
+        sys.exit(1)
 
     if args.list_devices:
-        try:
-            import evdev
-            from evdev import ecodes
-            devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-            print(f"Connected Input Devices ({len(devices)} found):")
-            for dev in devices:
-                caps = dev.capabilities().get(ecodes.EV_KEY, [])
-                has_kb = (ecodes.KEY_A in caps or ecodes.KEY_UP in caps or ecodes.KEY_B in caps)
-                print(f"  {dev.path}: '{dev.name}' (phys: {dev.phys}) -> Has Keyboard Keys: {has_kb}")
-        except Exception as exc:
-            print(f"Error listing input devices: {exc}")
+        import evdev
+        from evdev import ecodes
+        for path in evdev.list_devices():
+            dev = evdev.InputDevice(path)
+            caps = dev.capabilities().get(ecodes.EV_KEY, [])
+            print(f"  {dev.path}: '{dev.name}' (phys: {dev.phys}) keyboard={ecodes.KEY_A in caps}")
         sys.exit(0)
 
     if args.test_layers:
-        print(f"Verified {len(LAYERS)} Configured Layers:")
-        for idx, l in enumerate(LAYERS):
-            k = l["keys"]
-            print(f"  Layer {idx}: {l['name']} -> 5:[{k['a']}], 6:[{k['b']}], 11:[{k['c']}], 12:[{k['d']}]")
+        for idx, layer in enumerate(LAYERS):
+            k = layer["keys"]
+            sel = LAYER_SELECT_KEYS[idx].replace("KEY_", "")
+            print(f"Shift+{sel:<5} -> {format_layer_line(idx, layer)}   "
+                  f"(emits a:{k['a']} b:{k['b']} c:{k['c']} d:{k['d']})")
         sys.exit(0)
 
-    # Initialize OSD Banner
-    osd = NativeOSDBanner(display_str=args.display) if not args.no_gui else NativeOSDBanner(display_str="")
+    overlay = TitleBarOverlay("" if args.no_gui else args.display)
+    manager = LayerManager(LAYERS, overlay, args.query)
+    worker = threading.Thread(target=manager.run, daemon=True)
+    worker.start()
 
-    # Initialize Layer Manager in a background thread
-    manager = MacroLayerManager(layers=LAYERS, osd=osd, device_query=args.query)
-    worker_thread = threading.Thread(target=manager.run, daemon=True)
-    worker_thread.start()
-
-    # Run Tkinter mainloop on the main thread if GUI is enabled
-    if osd.enabled:
-        try:
-            osd.run_loop()
-        except KeyboardInterrupt:
-            logger.info("Exiting MacroPad daemon.")
-    else:
-        try:
-            while worker_thread.is_alive():
+    try:
+        if overlay.enabled:
+            overlay.run_loop()
+        else:
+            while worker.is_alive():
                 time.sleep(1.0)
-        except KeyboardInterrupt:
-            logger.info("Exiting MacroPad daemon.")
+    except KeyboardInterrupt:
+        logger.info("Exiting.")
 
 
 if __name__ == "__main__":

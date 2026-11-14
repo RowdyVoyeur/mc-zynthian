@@ -98,24 +98,20 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
    - **Row 2:** Key 7: `Left` | Key 8: `Down` | Key 9: `Right` | Key 10: `none` | Key 11: `c` | Key 12: `d`
 
 4. **Background Virtual Layer Daemon ([`scripts/layer-cake.py`](scripts/layer-cake.py)):**
-   - **6 Software Layers (0 to 5):** Configurable in Python, easily extensible.
-   - **Directional & Shift-Modified Navigation:**
-     - `Up`, `Down`, `Left`, `Right` remain persistent across all layers for cursor navigation, knob adjustment, and list scrolling.
-     - **`Shift + Up` (Key 4 + Key 2):** Cycles to the **next layer** ($0 \to 1 \to 2 \to 3 \to 4 \to 5 \to 0$).
-     - **`Shift + Down` (Key 4 + Key 8):** Cycles to the **previous layer** ($1 \to 0 \to 5 \to 4 \to 3 \to 2 \dots$).
-     - **`Shift + Left` (Key 4 + Key 7):** Emits **`Escape`** (`KEY_ESC`) across all layers for No / Back / Cancel.
-     - **`Shift + Right` (Key 4 + Key 9):** Emits **`Enter`** (`KEY_ENTER`) across all layers for Yes / Select / Confirm.
-   - **Dynamic Action Cluster (Keys 5, 6, 11, 12):**
-     - **Layer 0:** Key 5: `a` | Key 6: `b` | Key 11: `c` | Key 12: `d`
-     - **Layer 1:** Key 5: `e` | Key 6: `f` | Key 11: `g` | Key 12: `h`
-     - **Layer 2:** Key 5: `i` | Key 6: `j` | Key 11: `k` | Key 12: `l`
-     - **Layer 3:** Key 5: `m` | Key 6: `n` | Key 11: `o` | Key 12: `p`
-     - **Layer 4:** Key 5: `q` | Key 6: `r` | Key 11: `s` | Key 12: `t`
-     - **Layer 5:** Key 5: `u` | Key 6: `v` | Key 11: `w` | Key 12: `x`
-   - **Native Flush On-Screen Display (OSD):**
-     - Renders an edge-to-edge, full-width status band across the display (`DISPLAY=:0`) directly below the title bar down to the channel pan bars for 1.8 seconds whenever the layer changes.
-     - Styled in high-contrast white over pure black (`#000000`) with generous line spacing and large readable typography (e.g. `Layer 1: Context Actions & Recording` on line 1, and `[E] Bold Select    [F] Panic (All Off)    [G] Snapshots    [H] Rec Audio` on line 2).
-     - Includes an automatic X11 boot retry loop to ensure graceful startup on system boot.
+   - **8 Directly Selectable Layers:** Hold `Shift` (Key 4) and press a key to jump straight to a layer. Shift itself is never forwarded to Zynthian.
+     | Layer | Select with | Key 5 (`a`) | Key 6 (`b`) | Key 11 (`c`) | Key 12 (`d`) | Role |
+     |---|---|---|---|---|---|---|
+     | 1 | `Shift + Up` | `a` | `b` | `c` | `d` | Main |
+     | 2 | `Shift + Down` | `a` | `b` | `e` | `f` | Main |
+     | 3 | `Shift + Left` | `a` | `b` | `g` | `h` | Main |
+     | 4 | `Shift + Right` | `a` | `b` | `i` | `j` | Main |
+     | 5 | `Shift + A` | `a` | `b` | `k` | `l` | Main |
+     | 6 | `Shift + B` | `a` | `b` | `m` | `n` | Main |
+     | 7 | `Shift + C` | `o` | `p` | `q` | `r` | Secondary (parameter editing) |
+     | 8 | `Shift + D` | `s` | `t` | `u` | `v` | Secondary (parameter editing) |
+   - **Fixed keys:** Arrow keys always pass through unchanged. On Layers 1–6, `a` and `b` are always emitted (intended for Knob 2 and Knob 4 in Webconf); `c`/`d` change per layer (intended for hardware buttons such as Mix, Alt, etc.).
+   - **Title Bar Overlay:** A single line covering Zynthian's title bar (same height, Zynthian UI font, white on black) appears for 1.8 s when Shift is pressed or the layer changes, e.g. `3: [A] Knob 2 | [B] Knob 4 | [C] Btn C3 | [D] Btn D3`. Labels are placeholders until the final per-layer actions are chosen.
+   - Includes an automatic X11 boot retry loop to ensure graceful startup on system boot.
 
 5. **Daemon Service Setup (Starts on Boot & Survives Updates):**
    ```bash
