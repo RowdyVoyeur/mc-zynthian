@@ -96,7 +96,7 @@ ACTION_KEYS: Dict[str, str] = {"KEY_A": "a", "KEY_B": "b", "KEY_C": "c", "KEY_D"
 
 ZYNTHIAN_ENVARS_FILE = "/zynthian/config/zynthian_envars.sh"
 OVERLAY_HEIGHT: Optional[int] = None      # None = same as Zynthian topbar height
-OVERLAY_FONT_SIZE: Optional[int] = None   # None = same as Zynthian topbar font size
+OVERLAY_FONT_SIZE: Optional[int] = 10   # None = same as Zynthian topbar font size
 OVERLAY_DURATION_MS = 1800
 OVERLAY_FG = "#ffffff"
 OVERLAY_BG = "#000000"
