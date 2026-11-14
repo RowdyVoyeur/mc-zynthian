@@ -536,11 +536,10 @@ In Vendor Mode, the MC-101 functions as a high-resolution, multi-channel USB 2.0
 - **4 Channels IN (Pi $\to$ MC-101):** 1+2 Master In, 3+4 PC In (routes into MC-101 mixer).
 
 > [!TIP]
-> **Native Zynthian USB Audio Hotplug vs Custom Script:**
-> Since Zynthian Oram and Vangelis, Zynthian includes native hotplugging for class-compliant USB audio devices using `zita-ajbridge` (`zita-a2j` / `zita-j2a`). Connected USB audio interfaces appear automatically in the Zynthian Audio Router. **Always check the native Zynthian Audio Router first**.
-> If the native auto-bridge does not open all 10 capture / 4 playback channels for the MC-101, use the dedicated bridge daemon below. `zita-a2j` and `zita-j2a` provide lower CPU utilization and superior resampling drift compensation compared to legacy `alsa_in`/`alsa_out`, though `alsa_in`/`alsa_out` remains a proven fallback.
->
-> **Sample Rate Policy:** Ensure Zynthian JACK is set to **$44100\text{ Hz}$** in Webconf so the bridge only tracks clock drift rather than performing CPU-intensive sample rate conversion.
+> **Native Zynthian Audio Router Discovery (`zynain_` / `zynaout_` Prefix & JACK Port Aliases):**
+> In Zynthian OS (`zynthian_autoconnect.py`), the internal audio router discovers external hardware capture and playback bridges by querying JACK for clients prefixed with **`zynain`** (`jclient.get_ports("zynain", is_output=True, is_audio=True)`) and **`zynaout`** (`jclient.get_ports("zynaout", is_input=True, is_audio=True)`).
+> Furthermore, Zynthian's built-in `hotplug_audio` helper spawns `alsa_in`/`alsa_out` without `-c 10` or `-c 4`, which fails on the MC-101 in `VENDOR` mode because the MC-101 USB descriptor requires exact channel counts (`-c 10` for capture, `-c 4` for playback) at `44100` Hz.
+> By launching `alsa_in` with `-j zynain_mc101 -c 10 -r 44100` and `alsa_out` with `-j zynaout_mc101 -c 4 -r 44100` and assigning JACK port aliases (`port.set_alias()`), `zynthian_gui_audio_in.py` and `zynthian_gui_audio_out.py` automatically populate Zynthian's native **Chain Options $\rightarrow$ Audio In** and **Chain Options $\rightarrow$ Audio Out** menus with human-readable track names (`MC-101 Master L/R`, `MC-101 Track 1..4 L/R`, `MC-101 Master In L/R`, `MC-101 PC IN L/R`) and stereo pair checkboxes (`Outputs 3+4 (stereo)`, `Outputs 5+6 (stereo)`), while persisting all routings inside Zynthian Snapshots (`.zss`).
 
 ```
 +---------------------------------------------------------------------------------+
@@ -549,20 +548,16 @@ In Vendor Mode, the MC-101 functions as a high-resolution, multi-channel USB 2.0
 |  [Roland MC-101 USB Audio Class Interface (hw:MC101,DEV=0)]                     |
 |           |                                             ^                       |
 |           v (10 Channels Capture)                       | (4 Channels Playback) |
-|  [zita-a2j -j MC101_in -d hw:MC101,DEV=0 -c 10]         |                       |
-|  (or alsa_in -j MC101_in -r 44100 -p 64 -n 4 -c 10)     |                       |
+|  [alsa_in -j zynain_mc101 -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 10]         |
 |           |                                             |                       |
 |           v                                             |                       |
-|  [JACK2 Audio Server (44.1 kHz / 64 frames)]            |                       |
+|  [JACK2 Audio Server + zynautoconnect Native UI Menus]  |                       |
 |      |               |               |                  |                       |
-|      v (Track 1)     v (Track 2)     v (Master L/R)     |                       |
-|  [Zynthian FX 1] [Zynthian FX 2] [Pisound Audio Out]    |                       |
+|      v (Track 1-4)   v (Master L/R)  v (Main Mixbus)    |                       |
+|  [Zynthian Chains] [Zynthian FX]  [Pisound Audio Out]   |                       |
 |                                      |                  |                       |
-|  [Pisound 1/4" Input (Synth/Mic)] ---+                  |                       |
-|      |                                                  |                       |
-|      +--------------------------------------------------+                       |
-|             (zita-j2a -j MC101_out -d hw:MC101,DEV=0 -c 4)                      |
-|             (or alsa_out -j MC101_out -r 44100 -p 64 -n 4 -c 4)                 |
+|  [Zynthian Chain / Main / Pisound] --+------------------+                       |
+|             (alsa_out -j zynaout_mc101 -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 4)
 +---------------------------------------------------------------------------------+
 ```
 
@@ -571,66 +566,72 @@ In Vendor Mode, the MC-101 functions as a high-resolution, multi-channel USB 2.0
 ```bash
 #!/usr/bin/env bash
 # ==============================================================================
-# mcee-audio.sh: Roland MC-101 Multi-Channel ALSA/JACK Bridge Daemon
+# mcee-audio.sh: Roland MC-101 Multi-Channel ALSA/JACK Bridge for Zynthian UI
 # ==============================================================================
 
-set -euo pipefail
+set -uo pipefail
 
 ALSA_CARD="hw:MC101,DEV=0"
 SAMPLE_RATE=44100
-BUFFER_SIZE=64
+BUFFER_SIZE=128
 PERIODS=4
 
-cleanup() {
-    echo "[MC-101 Audio] Stopping audio bridge daemons..."
-    killall alsa_in alsa_out 2>/dev/null || true
-    exit 0
+IN_CLIENT="zynain_mc101"
+OUT_CLIENT="zynaout_mc101"
+
+set_jack_aliases() {
+    python3 - << 'PYEOF' 2>/dev/null || true
+import jack
+
+c = jack.Client("mc101_alias_setter", no_start_server=True)
+
+aliases = {
+    "zynain_mc101:capture_1":  "MC-101 Master L",
+    "zynain_mc101:capture_2":  "MC-101 Master R",
+    "zynain_mc101:capture_3":  "MC-101 Track 1 L",
+    "zynain_mc101:capture_4":  "MC-101 Track 1 R",
+    "zynain_mc101:capture_5":  "MC-101 Track 2 L",
+    "zynain_mc101:capture_6":  "MC-101 Track 2 R",
+    "zynain_mc101:capture_7":  "MC-101 Track 3 L",
+    "zynain_mc101:capture_8":  "MC-101 Track 3 R",
+    "zynain_mc101:capture_9":  "MC-101 Track 4 L",
+    "zynain_mc101:capture_10": "MC-101 Track 4 R",
+    "zynaout_mc101:playback_1": "MC-101 Master In L",
+    "zynaout_mc101:playback_2": "MC-101 Master In R",
+    "zynaout_mc101:playback_3": "MC-101 PC IN L",
+    "zynaout_mc101:playback_4": "MC-101 PC IN R",
 }
 
-trap cleanup SIGINT SIGTERM
+for port_name, label in aliases.items():
+    try:
+        port = c.get_port_by_name(port_name)
+        for existing in list(port.aliases):
+            try:
+                port.unset_alias(existing)
+            except Exception:
+                pass
+        port.set_alias(label)
+    except Exception:
+        pass
 
-echo "[MC-101 Audio] Waiting for MC-101 USB soundcard to enumerate..."
-while ! grep -qi "MC101" /proc/asound/cards 2>/dev/null; do
-    sleep 1
-done
-
-echo "[MC-101 Audio] Launching 10-channel capture bridge (alsa_in)..."
-alsa_in -j "MC101_in" -d "$ALSA_CARD" -r "$SAMPLE_RATE" -p "$BUFFER_SIZE" -n "$PERIODS" -c 10 &
-
-echo "[MC-101 Audio] Launching 4-channel playback bridge (alsa_out)..."
-alsa_out -j "MC101_out" -d "$ALSA_CARD" -r "$SAMPLE_RATE" -p "$BUFFER_SIZE" -n "$PERIODS" -c 4 &
-
-# Wait for JACK ports to register
-sleep 2
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-echo "[MC-101 Audio] Applying initial JACK audio routing (Preset 1: Master Return)..."
-if [[ -x "$SCRIPT_DIR/audio-flow.sh" ]]; then
-    "$SCRIPT_DIR/audio-flow.sh" 1 || true
-else
-    # Fallback baseline routing
-    jack_connect "zynmixer_bus:output_00a" "MC101_out:playback_1" 2>/dev/null || true
-    jack_connect "zynmixer_bus:output_00b" "MC101_out:playback_2" 2>/dev/null || true
-fi
-
-echo "[MC-101 Audio] Audio routing active. Monitoring processes..."
-wait
+c.close()
+PYEOF
+}
 ```
 
 ### 3.2 Dynamic Audio Routing Manager (`scripts/audio-flow.sh`)
 
-The dynamic audio routing manager provides automated, multi-preset JACK patching between Zynthian, the Roland MC-101, and system audio interfaces. It enables cycling through 8 routing configurations on the fly and provides targeted CLI routing for individual Zynthian synth chains and MC-101 track stems.
+While all standard per-chain and master routing can be configured directly in Zynthian's **Chain Options $\rightarrow$ Audio In** and **Chain Options $\rightarrow$ Audio Out** menus, `scripts/audio-flow.sh` provides an optional command-line preset matrix and status inspector.
 
 #### Core Port Topology
 
 | Logical Role | JACK Source Port | JACK Destination Port | Hardware Channel Path |
 |---|---|---|---|
-| **Zynthian Master Mix** | `zynmixer_bus:output_00a/b` | `MC101_out:playback_1/2` | Summed Zynthian stereo mix $\rightarrow$ MC-101 Master Return (direct DAC/phones) |
-| **Track MFX Insert** | `zynmixer_chan:output_XXa/b` | `MC101_out:playback_3/4` | Isolated Zynthian chain $\rightarrow$ MC-101 `PC IN` (processed by Track MFX/EQ) |
-| **Pisound Line In** | `system:capture_1/2` | `MC101_out:playback_3/4` | External hardware $\rightarrow$ MC-101 `PC IN` (processed by Track MFX/EQ) |
-| **MC-101 Master Mix** | `MC101_in:capture_1/2` | `system:playback_1/2` or `zynmixer_bus:input_01a/b` | Summed MC-101 mix $\rightarrow$ Pisound Out or Zynthian Audio In FX chain |
-| **MC-101 Isolated Stems**| `MC101_in:capture_3..10` | `zynmixer_chan:input_XXa/b` | Tracks 1–4 pre-Master FX $\rightarrow$ Zynthian effect chains or multitrack recorder |
+| **Zynthian Master Mix** | `zynmixer_bus:output_00a/b` | `zynaout_mc101:playback_1/2` | Summed Zynthian stereo mix $\rightarrow$ MC-101 Master Return (direct DAC/phones) |
+| **Track MFX Insert** | `zynmixer_chan:output_XXa/b` | `zynaout_mc101:playback_3/4` | Isolated Zynthian chain $\rightarrow$ MC-101 `PC IN` (processed by Track MFX/EQ) |
+| **Pisound Line In** | `system:capture_1/2` | `zynaout_mc101:playback_3/4` | External hardware $\rightarrow$ MC-101 `PC IN` (processed by Track MFX/EQ) |
+| **MC-101 Master Mix** | `zynain_mc101:capture_1/2` | `system:playback_1/2` or `zynmixer_bus:input_01a/b` | Summed MC-101 mix $\rightarrow$ Pisound Out or Zynthian Audio In FX chain |
+| **MC-101 Isolated Stems**| `zynain_mc101:capture_3..10` | `zynmixer_chan:input_XXa/b` | Tracks 1–4 pre-Master FX $\rightarrow$ Zynthian effect chains or multitrack recorder |
 
 #### 8 Standard Routing Presets
 

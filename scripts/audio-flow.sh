@@ -27,23 +27,25 @@ PISOUND_IN_R="system:capture_2"
 PISOUND_OUT_L="system:playback_1"
 PISOUND_OUT_R="system:playback_2"
 
-# MC-101 Host Playback (from Host INTO MC-101)
-MC101_MASTER_IN_L="MC101_out:playback_1"   # Ch 1: Master Mix Return L
-MC101_MASTER_IN_R="MC101_out:playback_2"   # Ch 2: Master Mix Return R
-MC101_PC_IN_L="MC101_out:playback_3"       # Ch 3: PC IN / Track Insert L
-MC101_PC_IN_R="MC101_out:playback_4"       # Ch 4: PC IN / Track Insert R
+# MC-101 Host Playback (from Host INTO MC-101, registered as zynaout_mc101 for Zynthian UI)
+MC101_OUT_CLIENT="zynaout_mc101"
+MC101_MASTER_IN_L="${MC101_OUT_CLIENT}:playback_1"   # Ch 1: Master Mix Return L
+MC101_MASTER_IN_R="${MC101_OUT_CLIENT}:playback_2"   # Ch 2: Master Mix Return R
+MC101_PC_IN_L="${MC101_OUT_CLIENT}:playback_3"       # Ch 3: PC IN / Track Insert L
+MC101_PC_IN_R="${MC101_OUT_CLIENT}:playback_4"       # Ch 4: PC IN / Track Insert R
 
-# MC-101 Host Capture (from MC-101 INTO Host)
-MC101_MASTER_OUT_L="MC101_in:capture_1"    # Ch 1: Master Mix Out L
-MC101_MASTER_OUT_R="MC101_in:capture_2"    # Ch 2: Master Mix Out R
-MC101_TRK1_OUT_L="MC101_in:capture_3"      # Ch 3: Track 1 Direct Out L
-MC101_TRK1_OUT_R="MC101_in:capture_4"      # Ch 4: Track 1 Direct Out R
-MC101_TRK2_OUT_L="MC101_in:capture_5"      # Ch 5: Track 2 Direct Out L
-MC101_TRK2_OUT_R="MC101_in:capture_6"      # Ch 6: Track 2 Direct Out R
-MC101_TRK3_OUT_L="MC101_in:capture_7"      # Ch 7: Track 3 Direct Out L
-MC101_TRK3_OUT_R="MC101_in:capture_8"      # Ch 8: Track 3 Direct Out R
-MC101_TRK4_OUT_L="MC101_in:capture_9"      # Ch 9: Track 4 Direct Out L
-MC101_TRK4_OUT_R="MC101_in:capture_10"     # Ch 10: Track 4 Direct Out R
+# MC-101 Host Capture (from MC-101 INTO Host, registered as zynain_mc101 for Zynthian UI)
+MC101_IN_CLIENT="zynain_mc101"
+MC101_MASTER_OUT_L="${MC101_IN_CLIENT}:capture_1"    # Ch 1: Master Mix Out L
+MC101_MASTER_OUT_R="${MC101_IN_CLIENT}:capture_2"    # Ch 2: Master Mix Out R
+MC101_TRK1_OUT_L="${MC101_IN_CLIENT}:capture_3"      # Ch 3: Track 1 Direct Out L
+MC101_TRK1_OUT_R="${MC101_IN_CLIENT}:capture_4"      # Ch 4: Track 1 Direct Out R
+MC101_TRK2_OUT_L="${MC101_IN_CLIENT}:capture_5"      # Ch 5: Track 2 Direct Out L
+MC101_TRK2_OUT_R="${MC101_IN_CLIENT}:capture_6"      # Ch 6: Track 2 Direct Out R
+MC101_TRK3_OUT_L="${MC101_IN_CLIENT}:capture_7"      # Ch 7: Track 3 Direct Out L
+MC101_TRK3_OUT_R="${MC101_IN_CLIENT}:capture_8"      # Ch 8: Track 3 Direct Out R
+MC101_TRK4_OUT_L="${MC101_IN_CLIENT}:capture_9"      # Ch 9: Track 4 Direct Out L
+MC101_TRK4_OUT_R="${MC101_IN_CLIENT}:capture_10"     # Ch 10: Track 4 Direct Out R
 
 # --- Helper Functions ---
 
@@ -82,20 +84,20 @@ clean_mc101_connections() {
     log "Clearing existing MC-101 audio routes..."
     # Disconnect inputs to MC-101 (playback ports)
     for p in playback_1 playback_2 playback_3 playback_4; do
-        if jack_lsp -c "MC101_out:$p" 2>/dev/null | grep -v "MC101_out:" >/dev/null; then
-            jack_lsp -c "MC101_out:$p" 2>/dev/null | grep -v "MC101_out:" | while read -r src; do
+        if jack_lsp -c "${MC101_OUT_CLIENT}:$p" 2>/dev/null | grep -v "${MC101_OUT_CLIENT}:" >/dev/null; then
+            jack_lsp -c "${MC101_OUT_CLIENT}:$p" 2>/dev/null | grep -v "${MC101_OUT_CLIENT}:" | while read -r src; do
                 src=$(echo "$src" | xargs)
-                [ -n "$src" ] && jack_disconnect "$src" "MC101_out:$p" 2>/dev/null || true
+                [ -n "$src" ] && jack_disconnect "$src" "${MC101_OUT_CLIENT}:$p" 2>/dev/null || true
             done
         fi
     done
 
     # Disconnect outputs from MC-101 (capture ports)
     for i in $(seq 1 10); do
-        if jack_lsp -c "MC101_in:capture_$i" 2>/dev/null | grep -v "MC101_in:" >/dev/null; then
-            jack_lsp -c "MC101_in:capture_$i" 2>/dev/null | grep -v "MC101_in:" | while read -r dst; do
+        if jack_lsp -c "${MC101_IN_CLIENT}:capture_$i" 2>/dev/null | grep -v "${MC101_IN_CLIENT}:" >/dev/null; then
+            jack_lsp -c "${MC101_IN_CLIENT}:capture_$i" 2>/dev/null | grep -v "${MC101_IN_CLIENT}:" | while read -r dst; do
                 dst=$(echo "$dst" | xargs)
-                [ -n "$dst" ] && jack_disconnect "MC101_in:capture_$i" "$dst" 2>/dev/null || true
+                [ -n "$dst" ] && jack_disconnect "${MC101_IN_CLIENT}:capture_$i" "$dst" 2>/dev/null || true
             done
         fi
     done
@@ -341,7 +343,7 @@ print_status() {
     echo " Active Preset: $current of $TOTAL_PRESETS"
     echo ""
     echo " Active MC-101 Connections:"
-    jack_lsp -c 2>/dev/null | grep -E -A 1 "MC101_out:|MC101_in:" || echo "  (None active or JACK not running)"
+    jack_lsp -c 2>/dev/null | grep -E -A 1 "${MC101_OUT_CLIENT}:|${MC101_IN_CLIENT}:" || echo "  (None active or JACK not running)"
     echo ""
     echo " Available Zynthian Chains:"
     jack_lsp 2>/dev/null | grep -E "zynmixer_chan:output_[0-9]{2}a" | sed 's/zynmixer_chan:output_\([0-9]*\)a/  - Chain \1/g' || echo "  (No mixer chains detected)"

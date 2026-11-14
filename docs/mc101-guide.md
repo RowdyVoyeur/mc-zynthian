@@ -139,43 +139,43 @@ While Roland officially states that `VENDOR` mode requires proprietary drivers (
 > - **4 Input Channels (Playback from Host into MC-101)**: Attempting to open fewer than 4 channels will similarly fail. You must explicitly request **`-c 4`**.
 
 #### Launching the Dual ALSA-JACK Bridge Daemons
-Use `alsa_in` and `alsa_out` to bridge the MC-101's hardware audio streams into the JACK audio graph alongside your primary soundcard (e.g., Pisound):
+Use `alsa_in` and `alsa_out` to bridge the MC-101's hardware audio streams into the JACK audio graph alongside your primary soundcard (e.g., Pisound). On Zynthian OS, naming the JACK clients with the **`zynain_`** and **`zynaout_`** prefixes registers them automatically inside Zynthian's native `Chain Options -> Audio In` and `Chain Options -> Audio Out` GUI menus:
 
 ```bash
 # Bridge 10 audio channels FROM MC-101 INTO JACK (Capture)
-alsa_in -j "MC101_in" -d hw:MC101,DEV=0 -r 44100 -p 64 -n 4 -c 10 &
+alsa_in -j "zynain_mc101" -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 10 &
 
 # Bridge 4 audio channels FROM JACK INTO MC-101 (Playback)
-alsa_out -j "MC101_out" -d hw:MC101,DEV=0 -r 44100 -p 64 -n 4 -c 4 &
+alsa_out -j "zynaout_mc101" -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 4 &
 ```
 
 #### Complete Channel Topography
 
-| JACK Port Name | Hardware Direction | MC-101 Channel | Signal Description | Control & Routing Behavior |
-|---|---|---|---|---|
-| `MC101_in:capture_1` / `_2` | MC-101 $\rightarrow$ Host | **Ch 1 + 2** | **Master Mix Out (L/R)** | Summed stereo mix post-Total Effects (Master MFX, Comp, EQ) |
-| `MC101_in:capture_3` / `_4` | MC-101 $\rightarrow$ Host | **Ch 3 + 4** | **Track 1 Direct Out (L/R)** | Isolated audio from Track 1 post-Track MFX/EQ, pre-Master FX |
-| `MC101_in:capture_5` / `_6` | MC-101 $\rightarrow$ Host | **Ch 5 + 6** | **Track 2 Direct Out (L/R)** | Isolated audio from Track 2 post-Track MFX/EQ, pre-Master FX |
-| `MC101_in:capture_7` / `_8` | MC-101 $\rightarrow$ Host | **Ch 7 + 8** | **Track 3 Direct Out (L/R)** | Isolated audio from Track 3 post-Track MFX/EQ, pre-Master FX |
-| `MC101_in:capture_9` / `_10`| MC-101 $\rightarrow$ Host | **Ch 9 + 10**| **Track 4 Direct Out (L/R)** | Isolated audio from Track 4 post-Track MFX/EQ, pre-Master FX |
-| `MC101_out:playback_1` / `_2`| Host $\rightarrow$ MC-101 | **Ch 1 + 2** | **Master In (Mix Return)** | **Bypasses internal controls**. Always active and routed directly into the master bus |
-| `MC101_out:playback_3` / `_4`| Host $\rightarrow$ MC-101 | **Ch 3 + 4** | **PC IN (Audio Insert)** | **Fully controllable**. Selectable L/R channels, route into `Audio Insert` on Tracks 1–4, and process with MFX |
+| JACK Port Name | Zynthian Port Alias | Hardware Direction | MC-101 Channel | Signal Description | Control & Routing Behavior |
+|---|---|---|---|---|---|
+| `zynain_mc101:capture_1` / `_2` | `MC-101 Master L` / `R` | MC-101 $\rightarrow$ Host | **Ch 1 + 2** | **Master Mix Out (L/R)** | Summed stereo mix post-Total Effects (Master MFX, Comp, EQ) |
+| `zynain_mc101:capture_3` / `_4` | `MC-101 Track 1 L` / `R` | MC-101 $\rightarrow$ Host | **Ch 3 + 4** | **Track 1 Direct Out (L/R)** | Isolated audio from Track 1 post-Track MFX/EQ, pre-Master FX |
+| `zynain_mc101:capture_5` / `_6` | `MC-101 Track 2 L` / `R` | MC-101 $\rightarrow$ Host | **Ch 5 + 6** | **Track 2 Direct Out (L/R)** | Isolated audio from Track 2 post-Track MFX/EQ, pre-Master FX |
+| `zynain_mc101:capture_7` / `_8` | `MC-101 Track 3 L` / `R` | MC-101 $\rightarrow$ Host | **Ch 7 + 8** | **Track 3 Direct Out (L/R)** | Isolated audio from Track 3 post-Track MFX/EQ, pre-Master FX |
+| `zynain_mc101:capture_9` / `_10`| `MC-101 Track 4 L` / `R` | MC-101 $\rightarrow$ Host | **Ch 9 + 10**| **Track 4 Direct Out (L/R)** | Isolated audio from Track 4 post-Track MFX/EQ, pre-Master FX |
+| `zynaout_mc101:playback_1` / `_2`| `MC-101 Master In L` / `R` | Host $\rightarrow$ MC-101 | **Ch 1 + 2** | **Master In (Mix Return)** | **Bypasses internal controls**. Always active and routed directly into the master bus |
+| `zynaout_mc101:playback_3` / `_4`| `MC-101 PC IN L` / `R` | Host $\rightarrow$ MC-101 | **Ch 3 + 4** | **PC IN (Audio Insert)** | **Fully controllable**. Selectable L/R channels, route into `Audio Insert` on Tracks 1–4, and process with MFX |
 
 #### Practical JACK Routing Examples (`jack_connect`)
 
 ```bash
 # 1. Route MC-101 Master Out directly to physical monitors/headphones (e.g., Pisound / System Out)
-jack_connect MC101_in:capture_1 system:playback_1
-jack_connect MC101_in:capture_2 system:playback_2
+jack_connect zynain_mc101:capture_1 system:playback_1
+jack_connect zynain_mc101:capture_2 system:playback_2
 
 # 2. Route external live audio (e.g. Pisound Line In or Zynthian synth) into MC-101 PC IN (Channels 3 & 4)
 # This allows processing external audio through MC-101 Track MFX via the Audio Insert feature!
-jack_connect system:capture_1 MC101_out:playback_3
-jack_connect system:capture_2 MC101_out:playback_4
+jack_connect system:capture_1 zynaout_mc101:playback_3
+jack_connect system:capture_2 zynaout_mc101:playback_4
 
 # 3. Route isolated MC-101 Track 1 audio into a Zynthian Effect Chain (e.g., Guitarix or MOD-UI)
-jack_connect MC101_in:capture_3 effect_processor:input_1
-jack_connect MC101_in:capture_4 effect_processor:input_2
+jack_connect zynain_mc101:capture_3 effect_processor:input_1
+jack_connect zynain_mc101:capture_4 effect_processor:input_2
 ```
 
 > [!TIP]
