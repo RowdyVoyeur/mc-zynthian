@@ -17,8 +17,9 @@ ALSA_CARD="hw:MC101,DEV=0"
 CAPTURE_CLIENT="zynain_mc101"
 PLAYBACK_CLIENT="zynaout_mc101"
 SAMPLE_RATE=44100
-DEFAULT_PERIOD_SIZE=128
+DEFAULT_PERIOD_SIZE=256
 PERIODS=4
+RESAMPLE_QUALITY=1
 CUSTOM_CONFIG="/zynthian/config/zynthian_custom_config.sh"
 ZYN_PYTHON="/zynthian/venv/bin/python3"
 if [[ ! -x "$ZYN_PYTHON" ]]; then
@@ -84,8 +85,8 @@ aliases = {
     "zynain_mc101:capture_8":  "MC-101 Ch 3 R",
     "zynain_mc101:capture_9":  "MC-101 Ch 4 L",
     "zynain_mc101:capture_10": "MC-101 Ch 4 R",
-    "zynaout_mc101:playback_1": "MC-101 Master L",
-    "zynaout_mc101:playback_2": "MC-101 Master R",
+    "zynaout_mc101:playback_1": "MC-101 Master In L",
+    "zynaout_mc101:playback_2": "MC-101 Master In R",
     "zynaout_mc101:playback_3": "MC-101 PC IN L",
     "zynaout_mc101:playback_4": "MC-101 PC IN R",
 }
@@ -130,21 +131,25 @@ while true; do
     stop_bridges
     sleep 0.5
 
-    # Use 128-frame period (512-frame ringbuffer with -n 4) when JACK buffer <= 128; scale up if JACK buffer > 128
+    # Use 256-frame period (1024-frame ringbuffer with -n 4) so ~550-frame USB startup delay never overflows;
+    # scale up automatically if JACK buffer > 256
     PERIOD_SIZE=$DEFAULT_PERIOD_SIZE
     if command -v jack_bufsize >/dev/null 2>&1; then
         JACK_BUF=$(jack_bufsize 2>/dev/null || echo 128)
-        if [[ "$JACK_BUF" =~ ^[0-9]+$ ]] && (( JACK_BUF > 128 )); then
+        if [[ "$JACK_BUF" =~ ^[0-9]+$ ]] && (( JACK_BUF > 256 )); then
             PERIOD_SIZE=$JACK_BUF
         fi
     fi
 
-    echo "[MC-101 Audio] Launching 10-channel capture bridge (${CAPTURE_CLIENT}, -r ${SAMPLE_RATE} -p ${PERIOD_SIZE} -n ${PERIODS} -c 10)..."
-    alsa_in -j "$CAPTURE_CLIENT" -d "$ALSA_CARD" -r "$SAMPLE_RATE" -p "$PERIOD_SIZE" -n "$PERIODS" -c 10 >/dev/null 2>&1 &
+    echo "[MC-101 Audio] Launching 10-channel capture bridge (${CAPTURE_CLIENT}, -r ${SAMPLE_RATE} -p ${PERIOD_SIZE} -n ${PERIODS} -c 10 -q ${RESAMPLE_QUALITY})..."
+    alsa_in -j "$CAPTURE_CLIENT" -d "$ALSA_CARD" -r "$SAMPLE_RATE" -p "$PERIOD_SIZE" -n "$PERIODS" -c 10 -q "$RESAMPLE_QUALITY" >/dev/null 2>&1 &
     IN_PID=$!
 
-    echo "[MC-101 Audio] Launching 4-channel playback bridge (${PLAYBACK_CLIENT}, -r ${SAMPLE_RATE} -p ${PERIOD_SIZE} -n ${PERIODS} -c 4)..."
-    alsa_out -j "$PLAYBACK_CLIENT" -d "$ALSA_CARD" -r "$SAMPLE_RATE" -p "$PERIOD_SIZE" -n "$PERIODS" -c 4 >/dev/null 2>&1 &
+    # Stagger playback bridge startup by 1s so capture & playback do not race on hw:MC101,DEV=0 initialization
+    sleep 1
+
+    echo "[MC-101 Audio] Launching 4-channel playback bridge (${PLAYBACK_CLIENT}, -r ${SAMPLE_RATE} -p ${PERIOD_SIZE} -n ${PERIODS} -c 4 -q ${RESAMPLE_QUALITY})..."
+    alsa_out -j "$PLAYBACK_CLIENT" -d "$ALSA_CARD" -r "$SAMPLE_RATE" -p "$PERIOD_SIZE" -n "$PERIODS" -c 4 -q "$RESAMPLE_QUALITY" >/dev/null 2>&1 &
     OUT_PID=$!
 
     set_port_aliases || true

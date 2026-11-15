@@ -191,6 +191,8 @@ Real-time audio latency consists of three distinct mathematical metrics:
 | **$48000\text{ Hz}$** | **$64\text{ frames}$** | **$2$** | **$1.33\text{ ms}$** | **$2.67\text{ ms}$** | **$\approx 4.8 - 5.2\text{ ms}$** | **Ultra-Low Latency / Stage Solo Performance** |
 | **$48000\text{ Hz}$** | **$128\text{ frames}$**| **$2$** | **$2.67\text{ ms}$** | **$5.33\text{ ms}$** | **$\approx 8.8 - 9.2\text{ ms}$** | **Recommended Stage Default (Rock-solid)** |
 | **$48000\text{ Hz}$** | **$256\text{ frames}$**| **$2$** | **$5.33\text{ ms}$** | **$10.67\text{ ms}$**| **$\approx 16.8 - 17.2\text{ ms}$**| **Heavy Multitrack & Dense Multi-FX Chains** |
+| **$44100\text{ Hz}$** | **$128\text{ frames}$**| **$2$** | **$2.90\text{ ms}$** | **$5.80\text{ ms}$** | **$\approx 9.6 - 10.0\text{ ms}$**| **Empirically Verified with 44.1 kHz USB Devices** |
+| **$44100\text{ Hz}$** | **$256\text{ frames}$**| **$2$** | **$5.80\text{ ms}$** | **$11.61\text{ ms}$**| **$\approx 18.0 - 18.5\text{ ms}$**| **High-Headroom 44.1 kHz Multitrack** |
 
 > [!TIP]
 > **Measuring True Round-Trip Latency:**
@@ -199,16 +201,16 @@ Real-time audio latency consists of three distinct mathematical metrics:
 > jack_iodelay
 > ```
 
-### 3.2 Sample Rate Strategy: Native 48 kHz with Asynchronous USB Bridging
-- **Pisound Native Sample Rates:** Because Pisound clocks the I2S bus from a hardware **$24.5760\text{ MHz}$** crystal oscillator, it strictly supports **$48000\text{ Hz}$, $96000\text{ Hz}$, and $192000\text{ Hz}$** (it does not support $44100\text{ Hz}$ natively).
+### 3.2 Sample Rate Strategy: 44.1 kHz vs 48 kHz with Asynchronous USB Bridging
+- **Sample Rate Selection:** While official Blokas documentation lists $48\text{ kHz}$, $96\text{ kHz}$, and $192\text{ kHz}$, empirical testing on Zynthian OS confirms Pisound operates cleanly at **$44100\text{ Hz}$** (`-r 44100 -p 128 -n 2`, $5.8\text{ ms}$ software latency) for both Audio In and Audio Out, as well as at **$48000\text{ Hz}$**.
 - **Bridging $44.1\text{ kHz}$ USB Devices (Roland MC-101 / Teensy):**
   - The Roland MC-101 operates fixed at $44.1\text{ kHz}$ in USB vendor mode ([`docs/mc101-guide.md`](mc101-guide.md)).
-  - Keep Zynthian JACK running at Pisound's native **$48000\text{ Hz}$** (`Buffer Size: 128`, `Periods: 2`), and bridge the MC-101 using `alsa_in` / `alsa_out` at `-r 44100 -p 128 -n 4` (providing a 512-frame ALSA ringbuffer so 128-frame JACK cycles never overrun the USB buffer).
+  - Running Zynthian JACK at **$44100\text{ Hz}$** (`Buffer Size: 128` or `256`, `Periods: 2`) matches the MC-101's nominal sample rate, and bridging with `alsa_in` / `alsa_out` at `-r 44100 -p 256 -n 4 -q 1` provides a 1024-frame ALSA ringbuffer with lightweight linear clock-drift tracking (~3% CPU).
 
 ### 3.3 Configuring JACK in Zynthian Webconf
 1. Navigate to **Hardware** $\rightarrow$ **Audio** in Zynthian Webconf.
-2. Set **Jack Sample Rate** to **`48000`**.
-3. Set **Jack Buffer Size** to **`128`** (recommended baseline: eliminates XRUNs, achieves rock-solid $5.3\text{ ms}$ output latency) or **`64`** (ultra-low latency, but prone to XRUNs under UI load).
+2. Set **Jack Sample Rate** to **`44100`** (to match $44.1\text{ kHz}$ USB audio gear) or **`48000`**.
+3. Set **Jack Buffer Size** to **`128`** ($5.8\text{ ms}$ at $44.1\text{ kHz}$ / $5.3\text{ ms}$ at $48\text{ kHz}$) or **`256`** ($11.6\text{ ms}$ at $44.1\text{ kHz}$ for heavy synth/FX loads).
 4. Set **Jack Periods** to **`2`**.
 5. Click **Save** to restart JACK with the new settings.
 

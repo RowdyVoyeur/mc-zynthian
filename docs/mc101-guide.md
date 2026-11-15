@@ -143,10 +143,11 @@ Use `alsa_in` and `alsa_out` to bridge the MC-101's hardware audio streams into 
 
 ```bash
 # Bridge 10 audio channels FROM MC-101 INTO JACK (Capture)
-alsa_in -j "zynain_mc101" -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 10 &
+alsa_in -j "zynain_mc101" -d hw:MC101,DEV=0 -r 44100 -p 256 -n 4 -c 10 -q 1 &
+sleep 1
 
 # Bridge 4 audio channels FROM JACK INTO MC-101 (Playback)
-alsa_out -j "zynaout_mc101" -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 4 &
+alsa_out -j "zynaout_mc101" -d hw:MC101,DEV=0 -r 44100 -p 256 -n 4 -c 4 -q 1 &
 ```
 
 #### Complete Channel Topography
@@ -158,7 +159,7 @@ alsa_out -j "zynaout_mc101" -d hw:MC101,DEV=0 -r 44100 -p 128 -n 4 -c 4 &
 | `zynain_mc101:capture_5` / `_6` | `MC-101 Ch 2 L` / `R` | MC-101 $\rightarrow$ Host | **Ch 5 + 6** | **Track 2 Direct Out (L/R)** | Isolated audio from Track 2 post-Track MFX/EQ, pre-Master FX |
 | `zynain_mc101:capture_7` / `_8` | `MC-101 Ch 3 L` / `R` | MC-101 $\rightarrow$ Host | **Ch 7 + 8** | **Track 3 Direct Out (L/R)** | Isolated audio from Track 3 post-Track MFX/EQ, pre-Master FX |
 | `zynain_mc101:capture_9` / `_10`| `MC-101 Ch 4 L` / `R` | MC-101 $\rightarrow$ Host | **Ch 9 + 10**| **Track 4 Direct Out (L/R)** | Isolated audio from Track 4 post-Track MFX/EQ, pre-Master FX |
-| `zynaout_mc101:playback_1` / `_2`| `MC-101 Master L` / `R` | Host $\rightarrow$ MC-101 | **Ch 1 + 2** | **Master In (Mix Return)** | **Bypasses internal controls**. Always active and routed directly into the master bus |
+| `zynaout_mc101:playback_1` / `_2`| `MC-101 Master In L` / `R` | Host $\rightarrow$ MC-101 | **Ch 1 + 2** | **Master In (Mix Return)** | **Bypasses internal controls**. Always active and routed directly into the master bus |
 | `zynaout_mc101:playback_3` / `_4`| `MC-101 PC IN L` / `R` | Host $\rightarrow$ MC-101 | **Ch 3 + 4** | **PC IN (Audio Insert)** | **Fully controllable**. Selectable L/R channels, route into `Audio Insert` on Tracks 1–4, and process with MFX |
 
 #### Practical JACK Routing Examples (`jack_connect`)
