@@ -56,25 +56,43 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         return phrase_idx
 
     def _start_active_phrase(self):
-        """Start the currently selected Phrase row in ZynSeq Launcher + JACK transport."""
+        """Start the currently selected Phrase row and all its child sequences immediately."""
         scene = self.zynseq.scene
         phrase = self._ensure_phrase_exists(self.zynseq.phrase)
         logging.info(f"[Roland MC-101] Starting ZynSeq scene={scene}, phrase={phrase}")
+
+        # 1. Reset transport to STOPPED first so transportStart triggers a fresh Bar 1 Beat 1 (bSync=true)
+        #    on the very next audio cycle.
+        self.zynseq.transport_stop("mc101")
+        self.zynseq.transport_stop("zynseq")
+
+        # 2. Set the Phrase Launcher to SEQ_STARTING (which also marks all active child sequences
+        #    as STARTING and calls transportStart("zynseq") -> g_nTransportState = STARTING -> bSync = true).
+        self.zynseq.libseq.setPlayState(
+            scene, phrase, zynseq.PHRASE_CHANNEL, zynseq.SEQ_STARTING
+        )
+
+        # 3. Also explicitly set any enabled child sequences in this phrase to SEQ_PLAYING
+        #    in case external MIDI clock already ticked past the initial bSync frame before Python woke up.
         self.zynseq.libseq.setPlayState(
             scene, phrase, zynseq.PHRASE_CHANNEL, zynseq.SEQ_PLAYING
         )
-        self.zynseq.transport_start("mc101")
+        for chan in range(zynseq.PHRASE_CHANNEL):
+            if not self.zynseq.libseq.isEmpty(scene, phrase, chan):
+                state_word = self.zynseq.libseq.getSequenceState(scene, phrase, chan)
+                repeat = (state_word >> 24) & 0xFF
+                if repeat > 0:
+                    self.zynseq.libseq.setPlayState(
+                        scene, phrase, chan, zynseq.SEQ_PLAYING
+                    )
 
     def _stop_all_phrases_and_sequences(self):
-        """Stop all playing Phrase rows and individual sequences in the active scene."""
+        """Immediately stop all playing Phrase rows, child sequences, and transport."""
         scene = self.zynseq.scene
         logging.info(f"[Roland MC-101] Stopping ZynSeq scene={scene} phrases and transport")
         for phrase in range(self.zynseq.phrases):
-            self.zynseq.libseq.setPlayState(
-                scene, phrase, zynseq.PHRASE_CHANNEL, zynseq.SEQ_STOPPED
-            )
-            for chan in range(zynseq.PHRASE_CHANNEL):
-                state = self.zynseq.libseq.getPlayState(scene, phrase, chan) & 0xFF
+            for chan in range(zynseq.PHRASE_CHANNEL + 1):
+                state = self.zynseq.libseq.getSequenceState(scene, phrase, chan) & 0xFF
                 if state != zynseq.SEQ_STOPPED:
                     self.zynseq.libseq.setPlayState(
                         scene, phrase, chan, zynseq.SEQ_STOPPED
@@ -92,8 +110,9 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         scene = self.zynseq.scene
         self.zynseq.select_phrase(phrase_idx)
         logging.info(f"[Roland MC-101] Scene Launch -> ZynSeq scene={scene}, phrase={phrase_idx}")
+        # Use SEQ_STARTING so the phrase and all its child sequences launch quantized on the bar boundary
         self.zynseq.libseq.setPlayState(
-            scene, phrase_idx, zynseq.PHRASE_CHANNEL, zynseq.SEQ_PLAYING
+            scene, phrase_idx, zynseq.PHRASE_CHANNEL, zynseq.SEQ_STARTING
         )
 
     def _launch_chain_clip(self, midi_chan, phrase_idx):
@@ -107,10 +126,11 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         logging.info(
             f"[Roland MC-101] Clip Launch -> ZynSeq scene={scene}, phrase={phrase_idx}, midi_chan={midi_chan + 1}"
         )
-        # Trigger MIDI sequence column (0..15)
-        self.zynseq.libseq.setPlayState(
-            scene, phrase_idx, midi_chan, zynseq.SEQ_PLAYING
-        )
+        # Trigger MIDI sequence column (0..15) quantized to bar sync (SEQ_STARTING)
+        if not self.zynseq.libseq.isEmpty(scene, phrase_idx, midi_chan):
+            self.zynseq.libseq.setPlayState(
+                scene, phrase_idx, midi_chan, zynseq.SEQ_STARTING
+            )
         # Also trigger Clippy audio launcher column (16..31) if a Clippy chain uses this MIDI channel
         clippy_chan = midi_chan + 16
         if clippy_chan < zynseq.PHRASE_CHANNEL:
@@ -120,7 +140,7 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
                     chain = self.chain_manager.chains.get(cid)
                     if chain and chain.get_clippy_processor():
                         self.zynseq.libseq.setPlayState(
-                            scene, phrase_idx, clippy_chan, zynseq.SEQ_PLAYING
+                            scene, phrase_idx, clippy_chan, zynseq.SEQ_STARTING
                         )
                         break
             except Exception:
