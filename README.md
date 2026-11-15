@@ -420,12 +420,14 @@ The driver has `autoload_flag = True` and `unroute_from_chains = False`, so it l
 
 ##### 4. Operational Behavior (Verified)
 
-| Action on Roland MC-101 | MIDI Message Sent | Action on Zynthian (`zynseq` Launcher / Mixer) |
+| Action | MIDI Message | Result on Target Device |
 |---|---|---|
-| Press **`[PLAY]`** | `0xFA` (`MIDI_START`) | Starts `zynseq` transport and immediately starts the currently selected **Phrase row (`Main`)** and all enabled child sequences on **Bar 1, Beat 1**. |
-| Press **`[STOP]`** | `0xFC` (`MIDI_STOP`) | Immediately stops all playing Phrase rows, child sequences, and `zynseq` transport. |
-| Select **Scene `1–N`** (`[CLIP] + [PAD]`) | `0xCF <0..127>` (PC on Ch 16) | Selects Phrase row `1–N` and queues it in **`SEQ_STARTING`** (orange `▶` icon). On the next bar boundary (`bSync`, matching the MC-101's 16-step `MstrStepLen`), the row turns green (`SEQ_PLAYING`) and switches all chains in sync with the MC-101. |
-| Select **Clip `1–16` on Track `1–4`** | `0xC0–0xC3 <0..15>` (PC on Ch 1–4) | Queues (`SEQ_STARTING`, orange `▶`) and launches Phrase `1–16`'s sequence (and Clippy slot, if present) on the Zynthian chain assigned to **MIDI Channel `1–4`** on the bar boundary. |
+| **MC-101:** Press **`[PLAY]`** | `0xFA` (`MIDI_START`) $\rightarrow$ Zynthian | Starts `zynseq` transport and immediately starts the currently selected **Phrase row (`Main`)** and all enabled child sequences on **Bar 1, Beat 1**. |
+| **MC-101:** Press **`[STOP]`** | `0xFC` (`MIDI_STOP`) $\rightarrow$ Zynthian | Immediately stops all playing Phrase rows, child sequences, and `zynseq` transport. |
+| **MC-101:** Select **Scene `1–N`** (`[CLIP] + [PAD]`) | `0xCF <0..127>` (PC on Ch 16) $\rightarrow$ Zynthian | Selects Phrase row `1–N` and queues it in **`SEQ_STARTING`** (orange `▶` icon). On the next bar boundary (`bSync`, matching the MC-101's 16-step `MstrStepLen`), the row turns green (`SEQ_PLAYING`), switches all chains in sync with the MC-101, and stops any chain whose slot in the new row is empty. |
+| **MC-101:** Select **Clip `1–16` on Track `1–4`** | `0xC0–0xC3 <0..15>` (PC on Ch 1–4) $\rightarrow$ Zynthian | Queues (`SEQ_STARTING`, orange `▶`) and launches Phrase `1–16`'s sequence (and Clippy slot, if present) on the Zynthian chain assigned to **MIDI Channel `1–4`** on the bar boundary. |
+| **Zynthian UI:** Launch **Phrase Row `1–N`** (`Main` column) | `0xCF <0..127>` (PC on Ch 16) $\rightarrow$ MC-101 | Transmits Scene Program Change to the MC-101 as soon as the Phrase row enters `SEQ_STARTING` (with child-clip suppression and loop guards), switching the MC-101 to **Scene `1–N`** on the same bar boundary. |
+| **Zynthian UI:** Launch **Sequence / Clip `1–16` on Ch `1–4`** | `0xC0–0xC3 <0..15>` (PC on Ch 1–4) $\rightarrow$ MC-101 | Transmits Clip Program Change to the MC-101 on **Track `1–4`** (when `Rx PC = ON` on the MC-101 track), switching that MC-101 track to **Clip `1–16`** on the bar boundary without feedback loops. |
 
 #### Next Steps:
 - Verify Pisound Audio In, MIDI In, and MIDI Out.
