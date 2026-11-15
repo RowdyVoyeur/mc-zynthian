@@ -205,7 +205,7 @@ Real-time audio latency consists of three distinct mathematical metrics:
 - **Sample Rate Selection:** While official Blokas documentation lists $48\text{ kHz}$, $96\text{ kHz}$, and $192\text{ kHz}$, empirical testing on Zynthian OS confirms Pisound operates cleanly at **$44100\text{ Hz}$** (`-r 44100 -p 128 -n 2`, $5.8\text{ ms}$ software latency) for both Audio In and Audio Out, as well as at **$48000\text{ Hz}$**.
 - **Bridging $44.1\text{ kHz}$ USB Devices (Roland MC-101 / Teensy):**
   - The Roland MC-101 operates fixed at $44.1\text{ kHz}$ in USB vendor mode ([`docs/mc101-guide.md`](mc101-guide.md)).
-  - Running Zynthian JACK at **$44100\text{ Hz}$** (`Buffer Size: 128` or `256`, `Periods: 2`) matches the MC-101's nominal sample rate, and bridging with `alsa_in` / `alsa_out` at `-r 44100 -p 256 -n 4 -q 1` provides a 1024-frame ALSA ringbuffer with lightweight linear clock-drift tracking (~3% CPU).
+  - Running Zynthian JACK at **$44100\text{ Hz}$** (`Buffer Size: 128` or `256`, `Periods: 2`) matches the MC-101's nominal sample rate, and bridging with `alsa_in` / `alsa_out` at `-r 44100 -p 256 -n 4 -q 2` provides a 1024-frame ALSA ringbuffer with fast band-limited sinc clock-drift tracking (~6.7% total 4-core CPU).
 
 ### 3.3 Configuring JACK in Zynthian Webconf
 1. Navigate to **Hardware** $\rightarrow$ **Audio** in Zynthian Webconf.

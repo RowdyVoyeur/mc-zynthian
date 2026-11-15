@@ -19,7 +19,7 @@ PLAYBACK_CLIENT="zynaout_mc101"
 SAMPLE_RATE=44100
 DEFAULT_PERIOD_SIZE=256
 PERIODS=4
-RESAMPLE_QUALITY=1
+RESAMPLE_QUALITY=2
 CUSTOM_CONFIG="/zynthian/config/zynthian_custom_config.sh"
 ZYN_PYTHON="/zynthian/venv/bin/python3"
 if [[ ! -x "$ZYN_PYTHON" ]]; then

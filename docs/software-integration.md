@@ -539,7 +539,7 @@ In Vendor Mode, the MC-101 functions as a high-resolution, multi-channel USB 2.0
 > **Native Zynthian Audio Router Discovery (`zynain_` / `zynaout_` Prefix, Hotplug Exclusion & JACK Port Aliases):**
 > In Zynthian OS (`zynthian_autoconnect.py`), the internal audio router discovers external hardware capture and playback bridges by querying JACK for clients prefixed with **`zynain`** (`jclient.get_ports("zynain", is_output=True, is_audio=True)`) and **`zynaout`** (`jclient.get_ports("zynaout", is_input=True, is_audio=True)`).
 > However, when `hotplug_audio_enabled` is active (`1` by default), `zynthian_autoconnect.py` automatically runs `alsa_in -d hw:MC101 -j zynain_MC101` and `alsa_out -d hw:MC101 -j zynaout_MC101` **without** `-r 44100 -p 64 -n 4 -c 10` / `-c 4`, locking the USB audio interface with default 2048-frame buffers (causing severe XRUNs and resampling noise) and generic `MC101 1..10` aliases.
-> Adding `export ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_IN="MC101"` and `export ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_OUT="MC101"` to `/zynthian/config/zynthian_custom_config.sh` instructs `update_hw_audio_ports()` to skip `MC101`, while `get_audio_capture_ports()` and `get_hw_audio_dst_ports()` still discover `zynain_mc101` (`-r 44100 -p 256 -n 4 -c 10 -q 1`) and `zynaout_mc101` (`-r 44100 -p 256 -n 4 -c 4 -q 1`) and display their custom JACK aliases (`MC-101 Master L/R`, `MC-101 Ch 1..4 L/R`, `MC-101 Master In L/R`, `MC-101 PC IN L/R`) inside Zynthian's native **Chain Options $\rightarrow$ Audio In** and **Chain Options $\rightarrow$ Audio Out** menus.
+> Adding `export ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_IN="MC101"` and `export ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_OUT="MC101"` to `/zynthian/config/zynthian_custom_config.sh` instructs `update_hw_audio_ports()` to skip `MC101`, while `get_audio_capture_ports()` and `get_hw_audio_dst_ports()` still discover `zynain_mc101` (`-r 44100 -p 256 -n 4 -c 10 -q 2`) and `zynaout_mc101` (`-r 44100 -p 256 -n 4 -c 4 -q 2`) and display their custom JACK aliases (`MC-101 Master L/R`, `MC-101 Ch 1..4 L/R`, `MC-101 Master In L/R`, `MC-101 PC IN L/R`) inside Zynthian's native **Chain Options $\rightarrow$ Audio In** and **Chain Options $\rightarrow$ Audio Out** menus.
 
 ```
 +---------------------------------------------------------------------------------+
@@ -548,7 +548,7 @@ In Vendor Mode, the MC-101 functions as a high-resolution, multi-channel USB 2.0
 |  [Roland MC-101 USB Audio Class Interface (hw:MC101,DEV=0)]                     |
 |           |                                             ^                       |
 |           v (10 Channels Capture)                       | (4 Channels Playback) |
-|  [alsa_in -j zynain_mc101 -d hw:MC101,DEV=0 -r 44100 -p 256 -n 4 -c 10 -q 1]    |
+|  [alsa_in -j zynain_mc101 -d hw:MC101,DEV=0 -r 44100 -p 256 -n 4 -c 10 -q 2]    |
 |           |                                             |                       |
 |           v                                             |                       |
 |  [JACK2 Audio Server + zynautoconnect Native UI Menus]  |                       |
@@ -557,7 +557,7 @@ In Vendor Mode, the MC-101 functions as a high-resolution, multi-channel USB 2.0
 |  [Zynthian Chains] [Zynthian FX]  [Pisound Audio Out]   |                       |
 |                                      |                  |                       |
 |  [Zynthian Chain / Main / Pisound] --+------------------+                       |
-|             (alsa_out -j zynaout_mc101 -d hw:MC101,DEV=0 -r 44100 -p 256 -n 4 -c 4 -q 1)
+|             (alsa_out -j zynaout_mc101 -d hw:MC101,DEV=0 -r 44100 -p 256 -n 4 -c 4 -q 2)
 +---------------------------------------------------------------------------------+
 ```
 

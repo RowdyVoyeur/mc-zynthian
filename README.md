@@ -256,7 +256,7 @@ systemctl restart zynthian
 
 #### Step 7: Roland MC-101 USB Audio Bridge & Native Zynthian UI Audio Routing
 
-The Roland MC-101 operates as a multi-channel USB soundcard under Linux when set to `VENDOR` mode ([`docs/mc101-guide.md`](docs/mc101-guide.md)). The audio transport is bridged into JACK via [`scripts/mcee-audio.sh`](scripts/mcee-audio.sh), providing 10 capture channels (stems out of MC-101) and 4 playback channels (audio into MC-101) using `-r 44100 -p 256 -n 4 -c 10 -q 1` and `-r 44100 -p 256 -n 4 -c 4 -q 1` (with a 1-second startup stagger and a 1024-frame ALSA ringbuffer so USB startup delay never overflows the buffer).
+The Roland MC-101 operates as a multi-channel USB soundcard under Linux when set to `VENDOR` mode ([`docs/mc101-guide.md`](docs/mc101-guide.md)). The audio transport is bridged into JACK via [`scripts/mcee-audio.sh`](scripts/mcee-audio.sh), providing 10 capture channels (stems out of MC-101) and 4 playback channels (audio into MC-101) using `-r 44100 -p 256 -n 4 -c 10 -q 2` and `-r 44100 -p 256 -n 4 -c 4 -q 2` (with a 1-second startup stagger and a 1024-frame ALSA ringbuffer so USB startup delay never overflows the buffer).
 
 Because Zynthian's internal audio router (`zynthian_autoconnect`) discovers external USB audio bridges by looking for JACK clients prefixed with **`zynain`** (capture) and **`zynaout`** (playback), `scripts/mcee-audio.sh`:
 1. Excludes `MC101` from Zynthian's built-in generic `hotplug_audio` spawner (`ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_IN="MC101"` and `ZYNTHIAN_HOTPLUG_AUDIO_DISABLED_OUT="MC101"` in `/zynthian/config/zynthian_custom_config.sh`), preventing Zynthian from grabbing `hw:MC101` with default unbuffered settings and generic `MC101 1..10` names.
