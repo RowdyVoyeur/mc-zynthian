@@ -23,7 +23,7 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
 **Goal:** Integrate external synthesizers and baseline physical control, achieving seamless audio/MIDI sync and deep hardware editing. Refer to the [Software Integration & Plugin Blueprint (`docs/software-integration.md`)](docs/software-integration.md) for the `mc101-ctrl.lv2` plugin, `mcee-audio.sh` multi-track audio daemon, and `scripts/kontroller.py` driver.
 
 - [ ] **nanoKONTROL Integration:** Configure the Korg nanoKONTROL to drive Zynthian's transport controls, navigation, and primary system parameters (see [`docs/nanokontrol-guide.md`](docs/nanokontrol-guide.md) and [`docs/software-integration.md`](docs/software-integration.md)).
-- [ ] **MC-101 USB MIDI Sync:** Ensure flawless MIDI IN/OUT via USB with the MC-101 (see [`docs/mc101-guide.md`](docs/mc101-guide.md)), allowing seamless clock synchronization.
+- [x] **MC-101 USB MIDI Sync:** Ensure flawless MIDI IN/OUT via USB with the MC-101 (see [`docs/mc101-guide.md`](docs/mc101-guide.md)), allowing seamless clock synchronization, transport control, Scene-to-Phrase row launching, and per-track Clip-to-Chain sequence launching via native `ctrldev` driver ([`scripts/zynthian-ctrldev-roland-mc-101.py`](scripts/zynthian-ctrldev-roland-mc-101.py)). *(Verified working)*
 - [x] **MC-101 USB Audio Transport:** Connect both master and per-track audio (IN and OUT) from the MC-101 to the Pi via USB at very low latency (via `scripts/mcee-audio.sh`, see [`docs/software-integration.md`](docs/software-integration.md)). *(Verified working in VENDOR mode with 4-channel playback and 10-channel capture; balanced stereo verified)*
 - [x] **Dynamic Audio Routing:** Enable on-the-fly audio routing (preferably via the Zynthian UI) to patch Pisound inputs to the MC-101, Zynthian master to MC-101 inputs, MC-101 tracks to Zynthian effects, etc. *(Implemented via native Zynthian UI Chain Audio Routing / Snapshots and via `scripts/audio-flow.sh` 8-preset matrix)*
 - [ ] **Zen-Core Editing Bridge:** Create a native LV2 plugin (`mc101-ctrl.lv2`) to edit MC-101 Zen-Core parameters directly from the Zynthian UI (see [`docs/software-integration.md`](docs/software-integration.md) and [`docs/mc101-sysex.md`](docs/mc101-sysex.md)).
@@ -377,6 +377,56 @@ For quick command-line inspection or scripted JACK patching outside the GUI, [`s
 ./scripts/audio-flow.sh route-track 1 zynfx
 ```
 
+#### Step 8: Roland MC-101 USB MIDI Sync, Transport & Scene/Clip Launcher Driver (`scripts/zynthian-ctrldev-roland-mc-101.py`)
+
+To enable the Roland MC-101 to control Zynthian's transport (`[PLAY]` / `[STOP]`), launch full Phrase rows in Zynthian's Mixer/Launcher when switching MC-101 Scenes, and launch individual chain sequences/clips when switching MC-101 Clips on Tracks 1–4, a native Zynthian Vangelis Control Device (`ctrldev`) driver is provided in [`scripts/zynthian-ctrldev-roland-mc-101.py`](scripts/zynthian-ctrldev-roland-mc-101.py) (see architectural details in [`docs/software-integration.md`](docs/software-integration.md) and MIDI parameters in [`docs/mc101-guide.md`](docs/mc101-guide.md)).
+
+##### 1. Roland MC-101 Hardware MIDI Configuration
+
+1. **System MIDI Settings (`[SHIFT] + [FILTER]` $\rightarrow$ `SYSTEM` $\rightarrow$ `MIDI`):**
+   - **`Sync Mode`**:
+     - Set to **`INT`** when the MC-101 is the Master Tempo Clock driving Zynthian.
+     - Set to **`AUTO`** (or **`SLAVE`**) when Zynthian is the Master Tempo Clock driving the MC-101.
+   - **`Sync Out`**: **`ON`** (transmits 24 PPQN clock `0xF8` and `0xFA` Start / `0xFC` Stop).
+   - **`Control Channel`**: **`16`** (default).
+   - **`Control Tx USB`**: **`ON`** (transmits `Program Change 0–127` on MIDI Channel 16 when switching Scenes).
+   - **`Control Rx`**: **`ON`**.
+2. **Per-Track MIDI Settings (`[SHIFT] + [TRACK SEL 1–4]` $\rightarrow$ `MIDI` tab, repeat for Tracks 1–4):**
+   - **`Tx USB`**: **`ON`** (mandatory for transmitting Clip Program Changes, Notes, and CCs over USB MIDI).
+   - **`Tx PC`**: **`ON`** (mandatory per-track switch enabling Clip Program Change output).
+   - **`Rx PC`**: **`ON`**.
+3. **Per-Clip Settings (`[SHIFT] + [CLIP PAD]` in `CLIP` mode):**
+   - **`Tx PC`**: **`DEFAULT`** (automatically transmits `Program Change 0–15` corresponding to Clips `1–16` on that track's MIDI channel `1–4`).
+
+##### 2. Zynthian MIDI & Tempo Configuration
+
+1. **Webconf (`Interface` $\rightarrow$ `MIDI Options`):**
+   - Enable **Accept MIDI Transport (`start/stop/continue`)** (`ZYNTHIAN_MIDI_TRANSPORT_ENABLED=1`).
+2. **Zynthian UI (`Tempo` Screen):**
+   - Set **Clock Source** to **External (`MIDI`)** or **Auto** when the MC-101 is Master (`Sync Mode = INT`), or **Internal (`Send MIDI Clock = ON`)** when Zynthian is Master (`Sync Mode = AUTO`).
+   - *(Note: When Zynthian receives external USB MIDI clock, `zynseq.cpp` calculates its UI BPM readout from single-tick deltas across 128-frame JACK buffers without smoothing, causing the displayed BPM number to fluctuate visually around the true tempo even though the underlying 24 PPQN tick sync is sample-accurate).*
+
+##### 3. Installing the Native `ctrldev` Driver on Zynthian
+
+Symlink [`scripts/zynthian-ctrldev-roland-mc-101.py`](scripts/zynthian-ctrldev-roland-mc-101.py) into Zynthian's `ctrldev` directory (note that Zynthian's loader requires underscores in the target filename inside `/zynthian/zynthian-ui/zyngine/ctrldev/`):
+
+```bash
+ln -sf /root/mc-zynthian/scripts/zynthian-ctrldev-roland-mc-101.py \
+       /zynthian/zynthian-ui/zyngine/ctrldev/zynthian_ctrldev_roland_mc_101.py
+systemctl restart zynthian
+```
+
+The driver has `autoload_flag = True` and `unroute_from_chains = False`, so it loads automatically whenever `MC-101 IN 1` is connected while still allowing notes and CCs (`CC 80–83`) from Tracks 1–4 to reach Zynthian instrument chains.
+
+##### 4. Operational Behavior (Verified)
+
+| Action on Roland MC-101 | MIDI Message Sent | Action on Zynthian (`zynseq` Launcher / Mixer) |
+|---|---|---|
+| Press **`[PLAY]`** | `0xFA` (`MIDI_START`) | Starts `zynseq` transport and immediately starts the currently selected **Phrase row (`Main`)** and all enabled child sequences on **Bar 1, Beat 1**. |
+| Press **`[STOP]`** | `0xFC` (`MIDI_STOP`) | Immediately stops all playing Phrase rows, child sequences, and `zynseq` transport. |
+| Select **Scene `1–N`** (`[CLIP] + [PAD]`) | `0xCF <0..127>` (PC on Ch 16) | Selects Phrase row `1–N` and queues it in **`SEQ_STARTING`** (orange `▶` icon). On the next bar boundary (`bSync`, matching the MC-101's 16-step `MstrStepLen`), the row turns green (`SEQ_PLAYING`) and switches all chains in sync with the MC-101. |
+| Select **Clip `1–16` on Track `1–4`** | `0xC0–0xC3 <0..15>` (PC on Ch 1–4) | Queues (`SEQ_STARTING`, orange `▶`) and launches Phrase `1–16`'s sequence (and Clippy slot, if present) on the Zynthian chain assigned to **MIDI Channel `1–4`** on the bar boundary. |
+
 #### Next Steps:
 - Verify Pisound Audio In, MIDI In, and MIDI Out.
-- Apply and verify macro keyboard live navigation.
+- Integrate Korg nanoKONTROL (`scripts/kontroller.py`) and Zen-Core LV2 editing bridge (`mc101-ctrl.lv2`).

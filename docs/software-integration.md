@@ -67,6 +67,7 @@ flowchart TD
 |---|---|---|---|---|
 | **Roland MC-101** | Deep ZEN-Core & Drum sound design | **Custom LV2 Plugin (`mc101-ctrl.lv2`)** | Roland SysEx DT1 (`0x12`) | Native parameter dials in **Control View**, full MIDI-Learn, automatic Snapshot preset saving |
 | **Roland MC-101** | Multi-channel stem streaming & FX routing | **Background Daemon (`scripts/mcee-audio.sh`)** | ALSA Vendor Mode (`alsa_in` / `alsa_out`) | JACK audio ports auto-routed to Zynthian chains and Pisound inputs |
+| **Roland MC-101** | Transport, Scene & Clip Launcher synchronization | **Native Control Device (`scripts/zynthian-ctrldev-roland-mc-101.py`)** | MIDI Real-Time (`0xFA`/`0xFC`) + Program Change (`0xC0–0xCF`) | Starts/stops active Phrase row, launches ZynSeq rows from MC-101 Scenes (`Ch 16`), and launches per-channel sequences/clips from MC-101 Clips (`Ch 1–4`) |
 | **Korg nanoKONTROL 1** | Dedicated 8-channel mixer & transport control | **Python Driver (`scripts/kontroller.py`)** | MIDI CC & Notes + CUIA via OSC | Direct mixer fader tracking, bank scrolling, transport automation |
 | **Ableton Push 1** | Melodic pads, drum step sequencing, LCD display | **Standalone Bridge (`scripts/pushy.py`) / Native ctrldev** | Push SysEx (LCD) + MIDI Notes + OSC | 64-pad scale matrix, 32-step sequencer, dual-page Zynthian parameter display |
 
@@ -717,6 +718,37 @@ flowchart TD
 ```udev
 # Roland MC-101 USB Audio / MIDI Hotplug Rule
 SUBSYSTEM=="usb", ATTRS{idVendor}=="0582", ATTRS{idProduct}=="0248", TAG+="systemd", ENV{SYSTEMD_WANTS}="mc101-audio.service"
+```
+
+### 3.4 Native Zynthian Control Device Driver (`scripts/zynthian-ctrldev-roland-mc-101.py`)
+
+#### 1. Why a Native `ctrldev` Driver Is Required in Zynthian Vangelis
+In ZynthianOS Vangelis (`zynthian-ui`), external MIDI Clock (`0xF8`), Transport (`0xFA` Start, `0xFB` Continue, `0xFC` Stop), and Program Change (`0xC0–0xCF`) follow two separate internal paths:
+- **Real-Time Clock (`0xF8`) & Instantaneous BPM Display (`zynseq.cpp`)**:
+  - When Zynthian's Tempo Clock Source is set to **External (`MIDI`)** or **Auto**, `zynthian_autoconnect` connects the hardware MIDI input (`system:midi_capture_X`) directly to `zynseq:clock_in`.
+  - Inside `zynseq.cpp` (`onJackProcess`), incoming `0xF8` ticks advance the step sequencer at 24 PPQN (`CLOCK_SOURCE_MIDI`). However, lines 242–249 of `zynseq.cpp` compute the UI's displayed BPM (`dTempo`) from the **instantaneous single-tick sample delta** across 128-frame ($2.9\text{ ms}$) JACK buffers with zero moving-average smoothing. Because USB bulk transfers and JACK buffer boundaries quantize individual `0xF8` tick timestamps by $\pm 1\text{–}3\text{ ms}$, Zynthian's displayed BPM number fluctuates visually (`101.5–134.1 BPM`) even when the hardware's true average clock is a rock-solid `120.0 BPM`.
+  - Furthermore, inside `zynseq.cpp` lines 293–304, the C++ handlers for `MIDI_START` (`0xFA`), `MIDI_CONTINUE` (`0xFB`), and `MIDI_STOP` (`0xFC`) are commented out with a `//!@todo` marker.
+- **UI Event Router (`zynmidirouter.c` $\rightarrow$ `zynthian_state_manager.py` $\rightarrow$ `ctrldev_manager`)**:
+  - When **Receive MIDI Transport** is enabled in Webconf (`ZYNTHIAN_MIDI_TRANSPORT_ENABLED=1`), `zynmidirouter.c` sets `FLAG_ZMIP_TRANSPORT` and forwards `0xFA`, `0xFB`, and `0xFC` into the UI ringbuffer (`write_zynmidi`) tagged with the source device's `idev` index.
+  - In `zynthian_state_manager.py`, `zynmidi_read()` passes every incoming event `(idev, ev)` first to `self.ctrldev_manager.midi_event(idev, ev)`. If no `ctrldev` driver claims the event, `zynthian_state_manager.py`'s fallback `if evtype == 0xF:` block handles only `0xF8` and `0xFE`, silently dropping `0xFA`, `0xFB`, and `0xFC`.
+
+#### 2. Driver Architecture & Event Mapping
+By subclassing `zynthian_ctrldev_base` (`dev_ids = ["MC-101 IN 1", "MC-101"]`, `unroute_from_chains = False`, `autoload_flag = True`), the driver intercepts transport and Scene/Clip Program Changes directly inside Zynthian's Python process while allowing all other MIDI events (Notes, Pitch Bend, Aftertouch, and CCs `80–83`) to pass through to instrument chains:
+
+| Incoming MIDI Event from MC-101 | Status Byte | Driver Action in `zynseq` (`libzynseq.so`) | Synchronization & Quantization Behavior |
+|---|---|---|---|
+| **MIDI Start / Continue** | `0xFA` / `0xFB` | `_start_active_phrase()` | Resets transport, sets active Phrase row (`PHRASE_CHANNEL = 32`) and all enabled non-empty child sequences (`chan 0..31`) to `SEQ_PLAYING` (`1`) so all chains start immediately on **Bar 1, Beat 1** without waiting an extra bar |
+| **MIDI Stop** | `0xFC` | `_stop_all_phrases_and_sequences()` | Immediately sets all non-stopped Phrase rows and child sequences to `SEQ_STOPPED` (`0`) and stops `zynseq` transport |
+| **Scene Program Change** (`Control Channel`, Default `Ch 16`) | `0xCF <0..127>` | `_launch_phrase_row(pgm)` | Selects Phrase row `pgm` and sets `PHRASE_CHANNEL` (`32`) to **`SEQ_STARTING` (`2`)** (orange `▶` icon). Because the MC-101 sends `0xCF` immediately on pad press but switches scenes after `MstrStepLen` (`16` steps = 1 bar), `SEQ_STARTING` transitions to `SEQ_PLAYING` (green `▶` icon) on the exact same bar boundary (`bSync`) |
+| **Clip Program Change** (`Track Channels 1–4`, Default `Ch 1–4`) | `0xC0–0xC3 <0..15>` | `_launch_chain_clip(evchan, pgm)` | Sets sequence `(scene, pgm, evchan)` (and Clippy column `evchan + 16` if present) to **`SEQ_STARTING` (`2`)**, launching the matching Zynthian sequence/clip on that MIDI channel (`1–4`) synchronized to the bar boundary |
+
+#### 3. Installation & Symlink Deployment on ZynthianOS
+Because Zynthian's `zynthian_ctrldev_manager` scans `/zynthian/zynthian-ui/zyngine/ctrldev/` for files named `zynthian_ctrldev_*.py`, deploy the driver via symlink:
+
+```bash
+ln -sf /root/mc-zynthian/scripts/zynthian-ctrldev-roland-mc-101.py \
+       /zynthian/zynthian-ui/zyngine/ctrldev/zynthian_ctrldev_roland_mc_101.py
+systemctl restart zynthian
 ```
 
 ---

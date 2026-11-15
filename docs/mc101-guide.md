@@ -327,12 +327,19 @@ In `SEQ` mode, pressing a lit step pad (Tone track) or `[SHIFT] + [PAD]` (Drum t
 
 ## 7. Complete MIDI Implementation & External Control
 
-### 7.1 Channel Architecture
-1. **Track Channels (`Track1–4 Ch`, Default `CH 1–4`)**: Receives notes, pitch bend, aftertouch, and CCs for each track; receives Program Change `0–15` to switch Clips `1–16`.
+### 7.1 Channel Architecture & Program Change (`PC`) Rules
+1. **Track Channels (`Track1–4 Ch`, Default `CH 1–4`)**:
+   - **Receive (`RX`)**: Receives notes, pitch bend, aftertouch, and CCs for each track; receives **Program Change `0–15`** to switch **Clips `1–16`** (requires Track `Rx PC = ON`).
+   - **Transmit (`TX`)**: Transmits notes, CCs (`CC 80–83`), and **Clip Program Changes** when **both** levels are enabled:
+     1. **Track MIDI Settings (`[SHIFT] + [TRACK SEL 1–4]` $\rightarrow$ `MIDI` tab)**: `Tx USB = ON` (for USB MIDI) and/or `Tx MIDI = ON` (for 5-pin/TRS MIDI Out), plus **`Tx PC = ON`**.
+     2. **Clip Settings (`[SHIFT] + [CLIP PAD]` $\rightarrow$ `Tx PC`)**: Set to **`DEFAULT`** (automatically sends `Program Change 0–15` corresponding to Clips `1–16`) or a specific override (`PC000–PC127`). If set to `OFF`, that clip will not transmit a Program Change.
 2. **Auto Channel (`MIDI Rx Auto Channel`, Ver. 1.30+)**: Redirects incoming MIDI on the designated channel to whichever track (`1–4`) is currently selected on the front panel. **Required** if you want an external MIDI keyboard to trigger the MC-101's internal **Arpeggiator** (Ver. 1.80+).
-3. **Control Channel (`Control Channel`, Ver. 1.20+)**:
-   - Receives **Program Change `0–127`** to switch **Scenes `1-01` through `8-16`** (requires `Control Rx = ON` in System MIDI Settings).
-   - Receives **MIDI Notes `60–75` (`C4–D#5`)** to trigger **Scatter Pads `1–16`** (requires `RX Scatter = ON` in System MIDI Settings).
+3. **Control Channel (`Control Channel`, Default `CH 16`, Ver. 1.20+)**:
+   - **Receive (`RX`)**:
+     - Receives **Program Change `0–127`** to switch **Scenes `1-01` through `8-16`** (requires `Control Rx = ON` in System MIDI Settings).
+     - Receives **MIDI Notes `60–75` (`C4–D#5`)** to trigger **Scatter Pads `1–16`** (requires `RX Scatter = ON` in System MIDI Settings).
+   - **Transmit (`TX`)**:
+     - Transmits **Program Change `0–127`** immediately upon pressing a Scene pad when `Control Tx USB = ON` (or `Control Tx MIDI = ON`) in System MIDI Settings, while the actual audio/pattern transition on the MC-101 waits for the quantized step boundary defined by `MstrStepLen` (default `16` steps = 1 bar in 4/4).
 
 ### 7.2 Control Change (CC) Reference Table
 
@@ -409,20 +416,24 @@ When controlling an MC-101 **DRUM track** from external pad controllers (such as
 - **Pad 8**: Tambourine (`G#2` / Note `56`)
 - **Pads 14–16**: Extended Percussion / User Samples (`D3` / Note `62`, `D#3` / Note `63`, `E3` / Note `64`)
 
-### 7.6 System MIDI Configuration Checklist (`[SHIFT] + [FILTER]` $\rightarrow$ `SYSTEM` $\rightarrow$ `MIDI`)
+### 7.6 System, Track & Clip MIDI Configuration Checklist
 
-To ensure external controllers and sequencers can operate the MC-101 properly, verify the following system menu settings:
+To ensure external controllers and sequencers can operate and synchronize with the MC-101 in both directions, verify the following menu settings:
 
-| Parameter | Recommended Setting | Purpose / Impact |
-|---|---|---|
-| **`Control Rx`** | **`ON`** | **Mandatory** for switching Scenes via Program Change `0–127` on the Control Channel |
-| **`Control Channel`** | Default `16` (or `13–16`) | Sets the dedicated MIDI channel for Scenes and Scatter Pads |
-| **`Rx Scatter`** | **`ON`** | **Mandatory** for triggering Scatter Pads `1–16` via MIDI Notes `60–75` (`C4–D#5`) |
-| **`MIDI Rx Auto Ch`** | Match Master Controller (e.g., `Ch 16`) | Redirects incoming notes to the selected track; required to play the onboard **Arpeggiator** |
-| **`Sync Mode`** | `AUTO` or `SLAVE` | Locks MC-101 tempo to external incoming MIDI clock (e.g., from Zynthian) |
-| **`Sync Out`** | `ON` | Transmits 24 PPQN MIDI Clock to sync downstream synthesizers |
-| **`Rx PC` (Per Track)**| `ON` | Allows external Program Changes `0–15` to switch clips on that track |
-| **`Rx Motion Toggles`**| `ON` (`Volume`, `Pan`, `ModWheel`, `Hold-1`, `RevSend`) | Enables live recording of external CC motion into clip steps |
+| Menu Scope | Parameter | Recommended Setting | Purpose / Impact |
+|---|---|---|---|
+| **System MIDI** (`[SHIFT] + [FILTER]` $\rightarrow$ `SYSTEM` $\rightarrow$ `MIDI`) | **`Control Rx`** | **`ON`** | Allows external Program Change `0–127` on the Control Channel to switch Scenes |
+| **System MIDI** | **`Control Tx USB`** / **`Control Tx MIDI`** | **`ON`** | **Mandatory** for transmitting Scene Program Change `0–127` on the Control Channel |
+| **System MIDI** | **`Control Channel`** | Default `16` (or `13–16`) | Sets the dedicated MIDI channel for Scenes and Scatter Pads |
+| **System MIDI** | **`Rx Scatter`** | **`ON`** | **Mandatory** for triggering Scatter Pads `1–16` via MIDI Notes `60–75` (`C4–D#5`) |
+| **System MIDI** | **`MIDI Rx Auto Ch`** | Match Master Controller | Redirects incoming notes to the selected track; required to play the onboard **Arpeggiator** |
+| **System MIDI** | **`Sync Mode`** | `AUTO` or `SLAVE` (or `INT`) | Locks MC-101 tempo to incoming MIDI clock (`AUTO`/`SLAVE`), or acts as master clock (`INT`) |
+| **System MIDI** | **`Sync Out`** | **`ON`** | Transmits 24 PPQN MIDI Clock (`0xF8`) and Transport (`0xFA` Start / `0xFC` Stop) |
+| **Track MIDI** (`[SHIFT] + [TRACK SEL 1–4]` $\rightarrow$ `MIDI`) | **`Tx USB`** / **`Tx MIDI`** | **`ON`** | **Mandatory** for transmitting notes, CCs, and Clip Program Changes over USB / TRS MIDI |
+| **Track MIDI** | **`Tx PC`** | **`ON`** | **Mandatory** per-track master switch enabling Clip Program Change transmission |
+| **Track MIDI** | **`Rx PC`** | **`ON`** | Allows incoming Program Changes `0–15` to switch clips on that track |
+| **Track MIDI** | **`Rx Motion Toggles`** | **`ON`** (`Volume`, `Pan`, `ModWheel`, `Hold-1`, `RevSend`) | Enables live recording of external CC motion into clip steps |
+| **Clip Settings** (`[SHIFT] + [CLIP PAD]`) | **`Tx PC`** | **`DEFAULT`** (or `PC000–127`) | **`DEFAULT`** automatically transmits `PC 0–15` matching Clips `1–16`; `OFF` disables TX for that clip |
 
 ---
 
