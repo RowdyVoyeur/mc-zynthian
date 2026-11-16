@@ -11,12 +11,13 @@
 #
 # Transport FROM Zynthian TO the MC-101 is carried by zynseq's own clock output
 # ("Send MIDI Clock" enabled), which emits 0xFA when zynseq transport starts and
-# 0xFC when it stops. This driver never duplicates those messages, except during
-# a cold-start realignment (see _cold_start_realign).
+# 0xFC when it stops. Outgoing Program Changes use dev_send_program_change()
+# (which writes a 3-byte record to ZynMidiRouter's ringbuffer, as required by
+# populate_midi_event_from_rb() in zynmidirouter.c).
 # ******************************************************************************
 
 import logging
-from time import monotonic, sleep
+from time import monotonic
 
 from zyncoder.zyncore import lib_zyncore
 from zyngine.ctrldev.zynthian_ctrldev_base import zynthian_ctrldev_base
@@ -47,14 +48,11 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
     # Guard windows (seconds)
     RX_ECHO_GUARD = 1.5             # Ignore TX echoes of PCs received from the MC-101
     TX_ECHO_GUARD = 2.0             # Ignore RX echoes of PCs sent to the MC-101
-    REALIGN_GUARD = 1.0             # Ignore transport echoes / state churn after a realignment
-    REALIGN_MIDI_GAP = 0.015        # Let FC + PC reach the MC-101 before zynseq emits FA
 
     def __init__(self, state_manager, idev_in, idev_out=None):
         super().__init__(state_manager, idev_in, idev_out)
         self._last_rx_transport_ts = 0.0
         self._zyn_was_playing = False
-        self._realign_until = 0.0
         self._suppress_tx_until = 0.0
 
         # Directional loop-prevention guards: (phrase_idx, timestamp)
@@ -126,57 +124,11 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         """Return True if a valid ZynMidiRouter output slot (0-indexed) is attached."""
         return self.idev_out is not None and self.idev_out >= 0
 
-    def _send_midi_bytes(self, raw_bytes):
+    def _send_program_change(self, midi_chan, pgm):
+        """Send a Program Change using dev_send_program_change (3-byte ringbuffer record)."""
         if not self._has_midi_out():
             return
-        msg = bytes(raw_bytes)
-        lib_zyncore.dev_send_midi_event(self.idev_out, msg, len(msg))
-
-    def _send_program_change(self, midi_chan, pgm):
-        self._send_midi_bytes([0xC0 | (midi_chan & 0x0F), pgm & 0x7F])
-
-    def _cold_start_realign(self, midi_chan, pgm):
-        """Zynthian was started from its own UI while stopped.
-
-        zynseq already emitted 0xFA on its clock output at tick 0, so the MC-101 started
-        on its OLD Scene/Clip, and a Program Change arriving now would only be applied
-        after a full MstrStepLen (1 bar) on the MC-101.
-
-        Fix: stop the MC-101 (0xFC), select the new Scene/Clip while it is stopped (applied
-        instantly), then restart zynseq transport from Bar 1 Beat 1. zynseq emits a fresh
-        0xFA on its clock output at that exact tick, so both devices start together.
-        """
-        now = monotonic()
-        self._realign_until = now + self.REALIGN_GUARD
-        self._zyn_was_playing = True
-
-        # 1. Stop ZynSeq & MC-101 and select the new Scene/Clip while stopped
-        scene = self.zynseq.scene
-        running = self._running_slots()
-        self.zynseq.libseq.transportStop(self.TRANSPORT_ALL_CLIENTS)
-        for phrase, chan in running:
-            self.zynseq.libseq.setPlayState(scene, phrase, chan, zynseq.SEQ_STOPPED)
-        self._send_midi_bytes([zynseq.MIDI_STOP])
-        sleep(0.005)
-        self._send_program_change(midi_chan, pgm)
-        sleep(self.REALIGN_MIDI_GAP)
-
-        # 2. Restart every running ZynSeq slot from position 0 on a fresh Bar 1 Beat 1
-        for phrase, chan in running:
-            if chan == zynseq.PHRASE_CHANNEL:
-                self.zynseq.libseq.setPlayState(scene, phrase, chan, zynseq.SEQ_PLAYING)
-        for phrase, chan in running:
-            if chan != zynseq.PHRASE_CHANNEL:
-                self.zynseq.libseq.setPlayState(scene, phrase, chan, zynseq.SEQ_PLAYING)
-        logging.warning(
-            f"[Roland MC-101] Cold-start realign -> MC-101 Ch {midi_chan + 1} PC {pgm}, restarted {len(running)} ZynSeq slots"
-        )
-
-    def _transmit(self, midi_chan, pgm, cold_start):
-        if cold_start:
-            self._cold_start_realign(midi_chan, pgm)
-        else:
-            self._send_program_change(midi_chan, pgm)
+        lib_zyncore.dev_send_program_change(self.idev_out, midi_chan & 0x0F, pgm & 0x7F)
 
     # --------------------------------------------------------------------------
     # Incoming actions (MC-101 -> Zynthian)
@@ -301,12 +253,12 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         - While playing: send PC only when a pad enters SEQ_STARTING (orange), so both
           devices switch on the same bar boundary. A Phrase row click sends ONLY a Scene PC;
           an individual pad click sends ONLY a Clip PC.
-        - While stopped (cold start): realign both devices from Bar 1 (_cold_start_realign).
+        - On cold start from stop: send the Scene/Clip PC immediately without restarting ZynSeq.
         """
         if not self._has_midi_out():
             return
         now = monotonic()
-        if now < self._realign_until or now < self._suppress_tx_until:
+        if now < self._suppress_tx_until:
             return
 
         scene = self.zynseq.scene
@@ -335,14 +287,14 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
                 return
             if phrase >= self.MAX_MC101_SCENES:
                 return
+            self._zyn_was_playing = True
             self._tx_scene_guard = (phrase, now)
             for trk_chan in self.TRACK_CHANNELS:
                 self._tx_clip_guard[trk_chan] = (phrase, now)
             logging.warning(
                 f"[Roland MC-101] TX Scene Launch -> MC-101 Ch {self.CONTROL_CHANNEL + 1} PC {phrase}"
-                + (" (cold start)" if cold_start else "")
             )
-            self._transmit(self.CONTROL_CHANNEL, phrase, cold_start)
+            self._send_program_change(self.CONTROL_CHANNEL, phrase)
             return
 
         # B. Individual sequence / Clippy pad -> Clip PC (Ch 1-4)
@@ -363,12 +315,12 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         if tx_clip == phrase and (now - tx_ts) < 0.25:
             return
 
+        self._zyn_was_playing = True
         self._tx_clip_guard[midi_chan] = (phrase, now)
         logging.warning(
             f"[Roland MC-101] TX Clip Launch -> MC-101 Ch {midi_chan + 1} PC {phrase}"
-            + (" (cold start)" if cold_start else "")
         )
-        self._transmit(midi_chan, phrase, cold_start)
+        self._send_program_change(midi_chan, phrase)
 
     # --------------------------------------------------------------------------
     # Real-time MIDI event handler (MC-101 -> Zynthian)
@@ -385,9 +337,8 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         # 1. Transport. The MC-101 retransmits Start/Stop it receives from zynseq's clock
         #    output, so echoes must be filtered:
         #    - Start while ZynSeq is already running = echo of Zynthian's own start
-        #    - Start/Stop inside a realignment window = echo of our realignment
         if evhead in (zynseq.MIDI_START, zynseq.MIDI_CONTINUE):
-            if now < self._realign_until or self._zynseq_is_running():
+            if self._zynseq_is_running():
                 return True
             if now - self._last_rx_transport_ts > 0.05:
                 self._last_rx_transport_ts = now
@@ -395,8 +346,6 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
             return True
 
         if evhead == zynseq.MIDI_STOP:
-            if now < self._realign_until:
-                return True
             if now - self._last_rx_transport_ts > 0.05:
                 self._last_rx_transport_ts = now
                 self._stop_all_phrases_and_sequences()
