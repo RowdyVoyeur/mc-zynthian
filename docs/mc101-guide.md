@@ -329,7 +329,7 @@ In `SEQ` mode, pressing a lit step pad (Tone track) or `[SHIFT] + [PAD]` (Drum t
 
 ### 7.1 Channel Architecture & Program Change (`PC`) Rules
 1. **Track Channels (`Track1–4 Ch`, Default `CH 1–4`)**:
-   - **Receive (`RX`)**: Receives notes, pitch bend, aftertouch, and CCs for each track; receives **Program Change `0–15`** to switch **Clips `1–16`** (requires Track `Rx PC = ON`).
+   - **Receive (`RX`)**: Automatically receives notes, pitch bend, aftertouch, CCs, and **Program Change `0–15`** to switch **Clips `1–16`** on each track's assigned MIDI channel (no separate `Rx PC` toggle is required).
    - **Transmit (`TX`)**: Transmits notes, CCs (`CC 80–83`), and **Clip Program Changes** when **both** levels are enabled:
      1. **Track MIDI Settings (`[SHIFT] + [TRACK SEL 1–4]` $\rightarrow$ `MIDI` tab)**: `Tx USB = ON` (for USB MIDI) and/or `Tx MIDI = ON` (for 5-pin/TRS MIDI Out), plus **`Tx PC = ON`**.
      2. **Clip Settings (`[SHIFT] + [CLIP PAD]` $\rightarrow$ `Tx PC`)**: Set to **`DEFAULT`** (automatically sends `Program Change 0–15` corresponding to Clips `1–16`) or a specific override (`PC000–PC127`). If set to `OFF`, that clip will not transmit a Program Change.
@@ -431,7 +431,6 @@ To ensure external controllers and sequencers can operate and synchronize with t
 | **System MIDI** | **`Sync Out`** | **`ON`** | Transmits 24 PPQN MIDI Clock (`0xF8`) and Transport (`0xFA` Start / `0xFC` Stop) |
 | **Track MIDI** (`[SHIFT] + [TRACK SEL 1–4]` $\rightarrow$ `MIDI`) | **`Tx USB`** / **`Tx MIDI`** | **`ON`** | **Mandatory** for transmitting notes, CCs, and Clip Program Changes over USB / TRS MIDI |
 | **Track MIDI** | **`Tx PC`** | **`ON`** | **Mandatory** per-track master switch enabling Clip Program Change transmission |
-| **Track MIDI** | **`Rx PC`** | **`ON`** | Allows incoming Program Changes `0–15` to switch clips on that track |
 | **Track MIDI** | **`Rx Motion Toggles`** | **`ON`** (`Volume`, `Pan`, `ModWheel`, `Hold-1`, `RevSend`) | Enables live recording of external CC motion into clip steps |
 | **Clip Settings** (`[SHIFT] + [CLIP PAD]`) | **`Tx PC`** | **`DEFAULT`** (or `PC000–127`) | **`DEFAULT`** automatically transmits `PC 0–15` matching Clips `1–16`; `OFF` disables TX for that clip |
 

@@ -393,8 +393,7 @@ To enable the Roland MC-101 to control Zynthian's transport (`[PLAY]` / `[STOP]`
    - **`Control Rx`**: **`ON`**.
 2. **Per-Track MIDI Settings (`[SHIFT] + [TRACK SEL 1–4]` $\rightarrow$ `MIDI` tab, repeat for Tracks 1–4):**
    - **`Tx USB`**: **`ON`** (mandatory for transmitting Clip Program Changes, Notes, and CCs over USB MIDI).
-   - **`Tx PC`**: **`ON`** (mandatory per-track switch enabling Clip Program Change output).
-   - **`Rx PC`**: **`ON`**.
+   - **`Tx PC`**: **`ON`** (mandatory per-track switch enabling Clip Program Change output; incoming Clip Program Changes `0–15` are received automatically on the track's MIDI channel).
 3. **Per-Clip Settings (`[SHIFT] + [CLIP PAD]` in `CLIP` mode):**
    - **`Tx PC`**: **`DEFAULT`** (automatically transmits `Program Change 0–15` corresponding to Clips `1–16` on that track's MIDI channel `1–4`).
 
@@ -427,7 +426,7 @@ The driver has `autoload_flag = True` and `unroute_from_chains = False`, so it l
 | **MC-101:** Select **Scene `1–N`** (`[CLIP] + [PAD]`) | `0xCF <0..127>` (PC on Ch 16) $\rightarrow$ Zynthian | Selects Phrase row `1–N` and queues it in **`SEQ_STARTING`** (orange `▶` icon). On the next bar boundary (`bSync`, matching the MC-101's 16-step `MstrStepLen`), the row turns green (`SEQ_PLAYING`), switches all chains in sync with the MC-101, and stops any chain whose slot in the new row is empty. |
 | **MC-101:** Select **Clip `1–16` on Track `1–4`** | `0xC0–0xC3 <0..15>` (PC on Ch 1–4) $\rightarrow$ Zynthian | Queues (`SEQ_STARTING`, orange `▶`) and launches Phrase `1–16`'s sequence (and Clippy slot, if present) on the Zynthian chain assigned to **MIDI Channel `1–4`** on the bar boundary. |
 | **Zynthian UI:** Launch **Phrase Row `1–N`** (`Main` column) | `0xCF <0..127>` (PC on Ch 16) $\rightarrow$ MC-101 | Transmits Scene Program Change to the MC-101 as soon as the Phrase row enters `SEQ_STARTING` (with child-clip suppression and loop guards), switching the MC-101 to **Scene `1–N`** on the same bar boundary. |
-| **Zynthian UI:** Launch **Sequence / Clip `1–16` on Ch `1–4`** | `0xC0–0xC3 <0..15>` (PC on Ch 1–4) $\rightarrow$ MC-101 | Transmits Clip Program Change to the MC-101 on **Track `1–4`** (when `Rx PC = ON` on the MC-101 track), switching that MC-101 track to **Clip `1–16`** on the bar boundary without feedback loops. |
+| **Zynthian UI:** Launch **Sequence / Clip `1–16` on Ch `1–4`** | `0xC0–0xC3 <0..15>` (PC on Ch 1–4) $\rightarrow$ MC-101 | Transmits Clip Program Change to the MC-101 on **Track `1–4`**, switching that MC-101 track to **Clip `1–16`** on the bar boundary without feedback loops. |
 
 #### Next Steps:
 - Verify Pisound Audio In, MIDI In, and MIDI Out.
