@@ -8,7 +8,6 @@
 #   1. Transport Sync (Start 0xFA / Continue 0xFB / Stop 0xFC)
 #   2. Bidirectional Scene <-> Phrase Row Launch (Control Ch 16 Program Change)
 #   3. Bidirectional Clip <-> Per-Chain Sequence Launch (Track Ch 1-4 PC 0-15)
-# Includes strict idempotency and state-tracking guards to prevent MIDI loops.
 # ******************************************************************************
 
 import logging
@@ -40,23 +39,17 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
     def __init__(self, state_manager, idev_in, idev_out=None):
         super().__init__(state_manager, idev_in, idev_out)
         self._last_transport_ts = 0.0
-        self._last_phrase_launch_ts = 0.0
-
-        # Track whether ZynSeq was already playing before a pad press
         self._zyn_was_playing = False
 
-        # Loop-prevention state trackers:
-        # Track which Scene (Phrase row) and per-channel Clip are already active/queued
-        # on the MC-101 so we never echo an incoming MC-101 PC back out, nor double-send
-        # when ZynSeq transitions from SEQ_STARTING (orange) -> SEQ_PLAYING (green).
-        self._mc101_active_scene = None
-        self._mc101_active_clips = {}
-
-        # Timestamp guards to ignore echoed PCs after outgoing/incoming transitions
-        self._rx_scene_guard_ts = 0.0
-        self._tx_scene_guard_ts = 0.0
-        self._rx_clip_guard_ts = {}
-        self._tx_clip_guard_ts = {}
+        # Directional loop-prevention guards:
+        #   _rx_scene_guard: (phrase_idx, timestamp) set when MC-101 -> Zynthian triggers a Scene
+        #   _tx_scene_guard: (phrase_idx, timestamp) set when Zynthian -> MC-101 triggers a Scene
+        #   _rx_clip_guard[chan]: (phrase_idx, timestamp) set when MC-101 -> Zynthian triggers a Clip
+        #   _tx_clip_guard[chan]: (phrase_idx, timestamp) set when Zynthian -> MC-101 triggers a Clip
+        self._rx_scene_guard = (None, 0.0)
+        self._tx_scene_guard = (None, 0.0)
+        self._rx_clip_guard = {}
+        self._tx_clip_guard = {}
 
     def init(self):
         super().init()
@@ -100,10 +93,6 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         if not self._zyn_was_playing:
             self._zyn_was_playing = True
             self._last_transport_ts = monotonic()
-            # When Zynthian starts from a stopped state, C++ zynseq:clock may have just sent 0xFA
-            # a few milliseconds before Python's state callback ran (which would cause the MC-101
-            # to wait 16 steps before applying the PC). Sending 0xFC -> PC -> 0xFA forces the
-            # MC-101 to switch to the target Scene/Clip immediately and start on Bar 1 Beat 1.
             self._send_midi_bytes([zynseq.MIDI_STOP])
             self._send_program_change(midi_chan, pgm)
             self._send_midi_bytes([zynseq.MIDI_START])
@@ -140,9 +129,7 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         phrase = self._ensure_phrase_exists(self.zynseq.phrase)
         now = monotonic()
         self._zyn_was_playing = True
-        self._last_phrase_launch_ts = now
-        self._mc101_active_scene = phrase
-        self._rx_scene_guard_ts = now
+        self._rx_scene_guard = (phrase, now)
 
         logging.warning(f"[Roland MC-101] RX Start -> ZynSeq scene={scene}, phrase={phrase}")
 
@@ -161,8 +148,7 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         for chan in range(zynseq.PHRASE_CHANNEL):
             if self._is_seq_enabled(scene, phrase, chan):
                 if chan in self.TRACK_CHANNELS:
-                    self._mc101_active_clips[chan] = phrase
-                    self._rx_clip_guard_ts[chan] = now
+                    self._rx_clip_guard[chan] = (phrase, now)
                 self.zynseq.libseq.setPlayState(
                     scene, phrase, chan, zynseq.SEQ_PLAYING
                 )
@@ -172,8 +158,6 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         scene = self.zynseq.scene
         logging.warning(f"[Roland MC-101] RX Stop -> ZynSeq scene={scene}")
         self._zyn_was_playing = False
-        self._mc101_active_scene = None
-        self._mc101_active_clips.clear()
 
         for phrase in range(self.zynseq.phrases):
             for chan in range(zynseq.PHRASE_CHANNEL + 1):
@@ -195,21 +179,18 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
 
         now = monotonic()
         # Loop guard: ignore if Zynthian just sent this Scene PC to the MC-101
-        if phrase_idx == self._mc101_active_scene and (now - self._tx_scene_guard_ts) < 2.0:
+        tx_phrase, tx_ts = self._tx_scene_guard
+        if tx_phrase == phrase_idx and (now - tx_ts) < 2.0:
             return
 
         scene = self.zynseq.scene
         cur_state = self._get_seq_state(scene, phrase_idx, zynseq.PHRASE_CHANNEL)
 
-        # Record MC-101 scene state before changing ZynSeq so on_seq_play_state won't echo it back
+        # Record RX guard before changing ZynSeq so on_seq_play_state won't echo it back
         self._zyn_was_playing = True
-        self._mc101_active_scene = phrase_idx
-        self._rx_scene_guard_ts = now
-        self._last_phrase_launch_ts = now
+        self._rx_scene_guard = (phrase_idx, now)
         for chan in self.TRACK_CHANNELS:
-            if self._is_seq_enabled(scene, phrase_idx, chan):
-                self._mc101_active_clips[chan] = phrase_idx
-                self._rx_clip_guard_ts[chan] = now
+            self._rx_clip_guard[chan] = (phrase_idx, now)
 
         # Idempotency guard: if this Phrase row is already queued (SEQ_STARTING) or playing (SEQ_PLAYING), do not re-toggle
         if cur_state in (zynseq.SEQ_STARTING, zynseq.SEQ_PLAYING):
@@ -244,18 +225,15 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
 
         now = monotonic()
         # Loop guard: ignore if Zynthian just sent this Clip PC to the MC-101
-        if (
-            self._mc101_active_clips.get(midi_chan) == phrase_idx
-            and (now - self._tx_clip_guard_ts.get(midi_chan, 0.0)) < 2.0
-        ):
+        tx_clip, tx_ts = self._tx_clip_guard.get(midi_chan, (None, 0.0))
+        if tx_clip == phrase_idx and (now - tx_ts) < 2.0:
             return
 
         scene = self.zynseq.scene
 
-        # Record MC-101 clip state before changing ZynSeq so on_seq_play_state won't echo it back
+        # Record RX guard before changing ZynSeq so on_seq_play_state won't echo it back
         self._zyn_was_playing = True
-        self._mc101_active_clips[midi_chan] = phrase_idx
-        self._rx_clip_guard_ts[midi_chan] = now
+        self._rx_clip_guard[midi_chan] = (phrase_idx, now)
 
         # 1. Trigger MIDI sequence column (0..15) quantized to bar sync (SEQ_STARTING)
         if self._is_seq_enabled(scene, phrase_idx, midi_chan):
@@ -290,7 +268,29 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
     # --------------------------------------------------------------------------
 
     def on_seq_play_state(self, phrase, chan):
-        """Called when a Phrase row or Sequence pad changes play state in ZynSeq."""
+        """Called when a Phrase row or Sequence pad changes play state in ZynSeq.
+
+        CRITICAL DESIGN RULE:
+        - When Zynthian is ALREADY PLAYING (_zyn_was_playing == True):
+          Clicking any Phrase row or Clip pad in Zynthian's UI puts that pad into
+          SEQ_STARTING (orange play icon) immediately upon click, and transitions
+          it to SEQ_PLAYING (green play icon) at the end of the bar.
+          Therefore, while playing we MUST ONLY transmit Program Change on
+          state == SEQ_STARTING (never on SEQ_PLAYING!).
+          Furthermore:
+            * Clicking a Phrase row (chan == 32) sets PHRASE_CHANNEL (32) AND all its
+              children (0..31) to SEQ_STARTING. Child channels see
+              phrase_state == SEQ_STARTING and are completely ignored, so a Phrase row
+              click ONLY ever sends a Scene PC (Ch 16).
+            * Clicking an individual Clip pad (chan 0..3) sets ONLY that clip to
+              SEQ_STARTING while PHRASE_CHANNEL (32) is NOT SEQ_STARTING, so a Clip
+              pad click ONLY ever sends a Clip PC (Ch 1-4) immediately upon click!
+        - When Zynthian is STOPPED (_zyn_was_playing == False):
+          Clicking a pad starts transport on tick 0 so the pad jumps directly to
+          SEQ_PLAYING before Python's GUI timer polls getStateChange(). In that case:
+            * If a Phrase row was clicked, PHRASE_CHANNEL (32) is SEQ_PLAYING.
+            * If an individual Clip pad was clicked, PHRASE_CHANNEL (32) is SEQ_CHILD_PLAYING.
+        """
         if not self._has_midi_out():
             return
 
@@ -305,38 +305,28 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         if state == zynseq.SEQ_STOPPED and self.zynseq.libseq.getPlayingSequences() == 0:
             if self._zyn_was_playing and (now - self._last_transport_ts) > 0.1:
                 self._zyn_was_playing = False
-                self._mc101_active_scene = None
-                self._mc101_active_clips.clear()
                 self._last_transport_ts = now
                 logging.warning("[Roland MC-101] TX Stop -> MC-101 (all ZynSeq sequences stopped)")
                 self._send_midi_bytes([zynseq.MIDI_STOP])
+            return
 
         # A. Phrase Row Launcher (chan == 32) -> Send Scene Program Change on Control Channel (Ch 16)
         if chan == zynseq.PHRASE_CHANNEL:
-            if state in (zynseq.SEQ_STARTING, zynseq.SEQ_PLAYING):
-                self._last_phrase_launch_ts = now
-                # Do not send if this phrase is already the active/queued MC-101 scene
-                # (prevents echoing MC-101 Scene PCs and prevents double-sending on STARTING -> PLAYING)
-                if phrase == self._mc101_active_scene:
+            is_queued_launch = (state == zynseq.SEQ_STARTING)
+            is_cold_start = (state == zynseq.SEQ_PLAYING and not self._zyn_was_playing)
+            if is_queued_launch or is_cold_start:
+                rx_phrase, rx_ts = self._rx_scene_guard
+                if rx_phrase == phrase and (now - rx_ts) < 0.5:
                     return
-                if (now - self._rx_scene_guard_ts) < 0.25:
+                tx_phrase, tx_ts = self._tx_scene_guard
+                if tx_phrase == phrase and (now - tx_ts) < 0.25:
                     return
                 if phrase < self.MAX_MC101_SCENES:
-                    self._mc101_active_scene = phrase
-                    self._tx_scene_guard_ts = now
-                    # Update tracked clips for all enabled child sequences in this row so their
-                    # simultaneous child state signals are not mistaken for individual clip launches
-                    for trk_chan in self.TRACK_CHANNELS:
-                        if self._is_seq_enabled(scene, phrase, trk_chan):
-                            self._mc101_active_clips[trk_chan] = phrase
-                            self._tx_clip_guard_ts[trk_chan] = now
+                    self._tx_scene_guard = (phrase, now)
                     logging.warning(
                         f"[Roland MC-101] TX Scene Launch -> MC-101 Ch {self.CONTROL_CHANNEL + 1} PC {phrase}"
                     )
                     self._send_pc_and_start_if_stopped(self.CONTROL_CHANNEL, phrase)
-            elif state == zynseq.SEQ_STOPPED:
-                if self._mc101_active_scene == phrase:
-                    self._mc101_active_scene = None
             return
 
         # B. Individual Sequence / Clippy Pad -> Send Clip Program Change on Track Channel (Ch 1-4)
@@ -344,35 +334,32 @@ class zynthian_ctrldev_roland_mc_101(zynthian_ctrldev_base):
         if midi_chan not in self.TRACK_CHANNELS or phrase >= self.MAX_MC101_CLIPS:
             return
 
-        if state in (zynseq.SEQ_STARTING, zynseq.SEQ_PLAYING):
-            # 1. Suppress if this sequence state change is part of a full Phrase row launch
-            #    (Note: in zynseq.cpp getStateChange(), child channels 0..31 are emitted before
-            #    PHRASE_CHANNEL 32, so during a Phrase launch phrase_state is either SEQ_STARTING
-            #    or SEQ_PLAYING with _mc101_active_scene != phrase).
-            phrase_state = self._get_seq_state(scene, phrase, zynseq.PHRASE_CHANNEL)
-            if phrase_state == zynseq.SEQ_STARTING or (
-                phrase_state == zynseq.SEQ_PLAYING and self._mc101_active_scene != phrase
-            ):
+        phrase_state = self._get_seq_state(scene, phrase, zynseq.PHRASE_CHANNEL)
+
+        # Trigger ONLY when an individual clip is queued (SEQ_STARTING while parent Phrase row
+        # is NOT launching) OR cold-started from stop (SEQ_PLAYING while parent Phrase row is SEQ_CHILD_PLAYING)
+        is_clip_queued = (
+            state == zynseq.SEQ_STARTING and phrase_state != zynseq.SEQ_STARTING
+        )
+        is_clip_cold_start = (
+            state == zynseq.SEQ_PLAYING
+            and not self._zyn_was_playing
+            and phrase_state == zynseq.SEQ_CHILD_PLAYING
+        )
+
+        if is_clip_queued or is_clip_cold_start:
+            rx_clip, rx_ts = self._rx_clip_guard.get(midi_chan, (None, 0.0))
+            if rx_clip == phrase and (now - rx_ts) < 0.5:
                 return
-            if (now - self._last_phrase_launch_ts) < 0.25:
+            tx_clip, tx_ts = self._tx_clip_guard.get(midi_chan, (None, 0.0))
+            if tx_clip == phrase and (now - tx_ts) < 0.25:
                 return
 
-            # 2. Loop & transition guard: do not send if this clip is already active/queued on the MC-101
-            if self._mc101_active_clips.get(midi_chan) == phrase:
-                return
-            if (now - self._rx_clip_guard_ts.get(midi_chan, 0.0)) < 0.25:
-                return
-
-            self._mc101_active_clips[midi_chan] = phrase
-            self._tx_clip_guard_ts[midi_chan] = now
+            self._tx_clip_guard[midi_chan] = (phrase, now)
             logging.warning(
                 f"[Roland MC-101] TX Clip Launch -> MC-101 Ch {midi_chan + 1} PC {phrase}"
             )
             self._send_pc_and_start_if_stopped(midi_chan, phrase)
-
-        elif state == zynseq.SEQ_STOPPED:
-            if self._mc101_active_clips.get(midi_chan) == phrase:
-                self._mc101_active_clips[midi_chan] = None
 
     # --------------------------------------------------------------------------
     # Real-Time MIDI Event Handler (MC-101 -> Zynthian)
