@@ -15,7 +15,7 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
 - [x] **Display Calibration:** Ensure the touchscreen works reliably to interact with the Zynthian UI (see native timings in [`docs/rpi-specs.md`](docs/rpi-specs.md)).
 - [ ] **Pisound Audio I/O:** Configure Pisound as the primary audio interface (see [`docs/pisound-guide.md`](docs/pisound-guide.md)). Achieve ultra-low latency audio matching or exceeding previous setup benchmarks. *(Audio Out verified at 48kHz, buffer size 128, 5.3ms latency, zero XRUNs; Audio In pending test)*
 - [ ] **Pisound MIDI I/O:** Ensure hardware MIDI IN and OUT ports work flawlessly.
-- [x] **Macro Keyboard Navigation:** Map the macro keyboard to be the primary navigation tool (see [`docs/sanyodevice-guide.md`](docs/sanyodevice-guide.md)). Implemented via single-layer EEPROM layout + background virtual layer daemon ([`scripts/layer-cake.py`](scripts/layer-cake.py)) providing 8 directly selectable software layers (1–8), `Shift + Key` switching, and native title-bar OSD layer notifications. *(Verified with virtual uinput driver)*
+- [x] **Macro Keyboard Navigation:** Map the macro keyboard to be the primary navigation tool (see [`docs/sanyodevice-guide.md`](docs/sanyodevice-guide.md)). Implemented via single-layer EEPROM layout + background virtual layer daemon ([`scripts/layer-cake.py`](scripts/layer-cake.py)) providing 8 directly selectable software layers (1–8), `Shift + Key` switching, native title-bar OSD layer notifications, and volatile USB HID RGB LED feedback on the `Shift` key. *(Verified with virtual uinput driver and live HID LED updates)*
 - [x] **Pisound Button Mapping:** Enable the physical button on the Pisound natively without extra packages (Short press: Admin Menu `SCREEN_ADMIN`, Long press: Power Menu `POWER`, see [`docs/pisound-guide.md`](docs/pisound-guide.md)). *(Verified working and persistent across reboots)*
 
 ### Stage 2: Enhanced Ecosystem
@@ -98,20 +98,20 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
    - **Row 2:** Key 7: `Left` | Key 8: `Down` | Key 9: `Right` | Key 10: `none` | Key 11: `c` | Key 12: `d`
 
 4. **Background Virtual Layer Daemon ([`scripts/layer-cake.py`](scripts/layer-cake.py)):**
-   - **8 Directly Selectable Layers:** Hold `Shift` (Key 4) and press a key to jump straight to a layer. Shift itself is never forwarded to Zynthian.
-     | Layer | Select with | Key 5 (`a`) | Key 6 (`b`) | Key 11 (`c`) | Key 12 (`d`) | Role |
-     |---|---|---|---|---|---|---|
-     | 1 | `Shift + Up` | `a` | `b` | `c` | `d` | Main |
-     | 2 | `Shift + Down` | `a` | `b` | `e` | `f` | Main |
-     | 3 | `Shift + Left` | `a` | `b` | `g` | `h` | Main |
-     | 4 | `Shift + Right` | `a` | `b` | `i` | `j` | Main |
-     | 5 | `Shift + A` | `a` | `b` | `k` | `l` | Main |
-     | 6 | `Shift + B` | `a` | `b` | `m` | `n` | Main |
-     | 7 | `Shift + C` | `o` | `p` | `q` | `r` | Secondary (parameter editing) |
-     | 8 | `Shift + D` | `s` | `t` | `u` | `v` | Secondary (parameter editing) |
+   - **8 Directly Selectable Layers & `Shift` Key LED Indicator:** Hold `Shift` (Key 4) and press a key to jump straight to a layer. Shift itself is never forwarded to Zynthian, and `layer-cake.py` updates Key 4's RGB LED live in volatile RAM over `/dev/hidraw*` (`API v2` Report ID `0x21`, zero EEPROM flash wear):
+     | Layer | Select with | `Shift` LED (Key 4) | Key 5 (`a`) | Key 6 (`b`) | Key 11 (`c`) | Key 12 (`d`) | Role |
+     |---|---|---|---|---|---|---|---|
+     | 1 | `Shift + Up` | Off (`#000000`) | `a` | `b` | `c` | `d` | Main |
+     | 2 | `Shift + Down` | Red (`#ff0000`) | `a` | `b` | `e` | `f` | Main |
+     | 3 | `Shift + Left` | Red (`#ff0000`) | `a` | `b` | `g` | `h` | Main |
+     | 4 | `Shift + Right` | Red (`#ff0000`) | `a` | `b` | `i` | `j` | Main |
+     | 5 | `Shift + A` | Red (`#ff0000`) | `a` | `b` | `k` | `l` | Main |
+     | 6 | `Shift + B` | Red (`#ff0000`) | `a` | `b` | `m` | `n` | Main |
+     | 7 | `Shift + C` | Yellow (`#ffff00`) | `o` | `p` | `q` | `r` | Secondary (parameter editing) |
+     | 8 | `Shift + D` | Yellow (`#ffff00`) | `s` | `t` | `u` | `v` | Secondary (parameter editing) |
    - **Fixed keys:** Arrow keys always pass through unchanged. On Layers 1–6, `a` and `b` are always emitted (intended for Knob 2 and Knob 4 in Webconf); `c`/`d` change per layer (intended for hardware buttons such as Mix, Alt, etc.).
    - **Title Bar Overlay:** A single line covering Zynthian's title bar (same height, Zynthian UI font, white on black) appears for 1.8 s when Shift is pressed or the layer changes, e.g. `3: [A] Knob 2 | [B] Knob 4 | [C] Btn C3 | [D] Btn D3`. Labels are placeholders until the final per-layer actions are chosen.
-   - Includes an automatic X11 boot retry loop to ensure graceful startup on system boot.
+   - Includes an automatic X11 boot retry loop to ensure graceful startup on system boot, and `--test-leds` to cycle Key 4 through Red $\to$ Yellow $\to$ Off.
 
 5. **Daemon Service Setup (Starts on Boot & Survives Updates):**
    ```bash

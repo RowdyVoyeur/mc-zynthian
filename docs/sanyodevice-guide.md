@@ -72,6 +72,22 @@ The lighting controller operates per-key and per-layer:
 - **Modes:** Static color, slow breathing / pulsating (with user-defined cycle period), reactive pulse (illuminates upon keydown), or completely disabled (`#000000` / OFF).
 - **Status Indicator Function:** Because lighting is tied to the active layer, individual keys can be configured as visual indicators (e.g., extinguished on Layer 0, breathing in specific colors on secondary layers) to signal the active operational bank to the user without requiring an on-screen display.
 
+### 2.4 Host-Controlled Runtime RGB Lighting (USB HID API v2)
+In addition to standalone EEPROM-stored lighting presets, composite SayoDevice 2x6F RGB units (e.g., USB `0x8089:0x0008`) expose a secondary vendor HID interface (`Usage Page 0xFF11` / `Report ID 0x21` for 64-byte API v2 packets, alongside `Usage Page 0xFF00` / `Report ID 0x02` for legacy v1 info queries):
+
+- **Packet Structure (`Report ID 0x21`, 64 bytes):**
+  ```text
+  [0]     0x21          Report ID (64-byte API v2 packet)
+  [1]     echo          Caller sequence/echo byte (e.g. 0x12)
+  [2..3]  checksum      16-bit little-endian sum of all 32 16-bit words (with [2..3] = 0)
+  [4..5]  cmd_len       Command block length in bytes (0x0004 for read, 0x003C for full write)
+  [6]     cmd_id        Command opcode (0x11 = Key Light, 0x12 = Palette, 0x0d = Save to flash)
+  [7]     index         Target element index (e.g. 0x00..0x0B across the 12 light elements)
+  [8..63] payload       Command payload (static RGB triplet resides at bytes [28..30] in 0x11 writes)
+  ```
+- **Volatile RAM Updates vs. Persistent Flash Writes:** Writing command `0x11` (Light) updates the addressed key's RGB state immediately in volatile RAM without committing to EEPROM/flash (`cmd = 0x0d` Save is separate). Host daemons can therefore dynamically update individual key indicator colors via `/dev/hidraw*` during runtime without flash wear or USB re-enumeration.
+- **Interface Independence:** Because the vendor HID endpoint (`input1` $\to$ e.g. `/dev/hidraw1`) is separate from the boot keyboard HID interface (`input0` $\to$ `/dev/input/event*`), runtime LED updates succeed even while the keyboard's `evdev` node is exclusively grabbed (`grab()`) by a userspace remapper.
+
 ---
 
 ## 3. WebHID Configuration Workflow
