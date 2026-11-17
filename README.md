@@ -102,16 +102,16 @@ To engineer a self-contained, ultra-low-latency electronic music performance hub
      | Layer | Select with | `Shift` LED (Key 4) | Key 5 (`a`) | Key 6 (`b`) | Key 11 (`c`) | Key 12 (`d`) | Role |
      |---|---|---|---|---|---|---|---|
      | 1 | `Shift + Up` | Off (`#000000`) | `a` | `b` | `c` | `d` | Main |
-     | 2 | `Shift + Down` | Red (`#ff0000`) | `a` | `b` | `e` | `f` | Main |
+     | 2 | `Shift + Down` | Red (`#ff0000`) | `a` | `b` | MIDI `C3` (`48`) | MIDI `C4` (`60`) | Main + MIDI preview |
      | 3 | `Shift + Left` | Red (`#ff0000`) | `a` | `b` | `g` | `h` | Main |
      | 4 | `Shift + Right` | Red (`#ff0000`) | `a` | `b` | `i` | `j` | Main |
      | 5 | `Shift + A` | Red (`#ff0000`) | `a` | `b` | `k` | `l` | Main |
      | 6 | `Shift + B` | Red (`#ff0000`) | `a` | `b` | `m` | `n` | Main |
      | 7 | `Shift + C` | Yellow (`#ffff00`) | `o` | `p` | `q` | `r` | Secondary (parameter editing) |
      | 8 | `Shift + D` | Yellow (`#ffff00`) | `s` | `t` | `u` | `v` | Secondary (parameter editing) |
-   - **Fixed keys:** Arrow keys always pass through unchanged. On Layers 1–6, `a` and `b` are always emitted (intended for Knob 2 and Knob 4 in Webconf); `c`/`d` change per layer (intended for hardware buttons such as Mix, Alt, etc.).
-   - **Title Bar Overlay:** A single line covering Zynthian's title bar (same height, Zynthian UI font, white on black) appears for 1.8 s when Shift is pressed or the layer changes, e.g. `3: [A] Knob 2 | [B] Knob 4 | [C] Btn C3 | [D] Btn D3`. Labels are placeholders until the final per-layer actions are chosen.
-   - Includes an automatic X11 boot retry loop to ensure graceful startup on system boot, and `--test-leds` to cycle Key 4 through Red $\to$ Yellow $\to$ Off.
+   - **Fixed keys & MIDI notes:** Arrow keys always pass through unchanged. On Layers 1–6, `a` and `b` are always emitted (intended for Knob 2 and Knob 4 in Webconf); `c`/`d` change per layer (on Layer 2, Keys 11/12 send hold-to-sustain JACK MIDI notes `C3`/`C4` to `ZynMidiRouter:dev23_in` via `python3-rtmidi`, automatically translated to the active chain by `FLAG_ZMIP_ACTIVE_CHAIN` for sample/preset auditioning).
+   - **Title Bar Overlay:** A single line covering Zynthian's title bar (same height, Zynthian UI font, white on black) appears for 1.8 s when Shift is pressed or the layer changes, e.g. `2: [A] Knob 2 | [B] Knob 4 | [C] Preview C3 | [D] Preview C4`. Most labels are placeholders until the final per-layer actions are chosen.
+   - Includes an automatic X11 boot retry loop to ensure graceful startup on system boot, `--test-leds` to cycle Key 4 through Red $\to$ Yellow $\to$ Off, and `--test-midi` to audition `C3`/`C4` over JACK MIDI.
 
 5. **Daemon Service Setup (Starts on Boot & Survives Updates):**
    ```bash

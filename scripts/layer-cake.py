@@ -24,6 +24,7 @@ import queue
 import re
 import select
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -39,7 +40,8 @@ logger = logging.getLogger("LayerCake")
 # ==============================================================================
 # Layer Configuration (edit here)
 # ==============================================================================
-# 'keys'   : what each physical key (a, b, c, d) emits on this layer
+# 'keys'   : what each physical key (a, b, c, d) emits on this layer:
+#            either a key name (e.g. 'a') or 'midi:<0..127>' (e.g. 'midi:48')
 # 'labels' : short description shown on the overlay
 # 'led'    : (R, G, B) color for Key 4 (Shift) LED in 0..255 ((0,0,0) = off)
 # Layers are listed in order: index 0 = Layer 1 ... index 7 = Layer 8.
@@ -49,6 +51,10 @@ LED_OFF: Tuple[int, int, int] = (0, 0, 0)
 LED_RED: Tuple[int, int, int] = (255, 0, 0)
 LED_YELLOW: Tuple[int, int, int] = (255, 255, 0)
 
+MIDI_TARGET_PORT = "ZynMidiRouter:dev23_in"
+MIDI_CHANNEL = 0       # 0-based (Ch 1); ZynMidiRouter routes & translates to active chain
+MIDI_VELOCITY = 100
+
 LAYERS: List[Dict] = [
     {   # Layer 1 (Shift + Up)
         "keys": {"a": "a", "b": "b", "c": "c", "d": "d"},
@@ -56,8 +62,8 @@ LAYERS: List[Dict] = [
         "led": LED_OFF,
     },
     {   # Layer 2 (Shift + Down)
-        "keys": {"a": "a", "b": "b", "c": "e", "d": "f"},
-        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C2", "d": "Btn D2"},
+        "keys": {"a": "a", "b": "b", "c": "midi:48", "d": "midi:60"},
+        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Preview C3", "d": "Preview C4"},
         "led": LED_RED,
     },
     {   # Layer 3 (Shift + Left)
@@ -131,6 +137,21 @@ def read_zynthian_envar(name: str, default: str) -> str:
     except OSError:
         pass
     return default
+
+
+def parse_midi_target(target: str) -> Optional[int]:
+    """Return MIDI note number (0..127) if target is 'midi:<note>', else None."""
+    if not isinstance(target, str) or not target.startswith("midi:"):
+        return None
+    note = int(target.split(":", 1)[1])
+    if not 0 <= note <= 127:
+        raise ValueError(f"MIDI note out of range (0..127): {note}")
+    return note
+
+
+def layer_has_midi(layer: Dict) -> bool:
+    """Return True if any key in the layer emits a MIDI note."""
+    return any(parse_midi_target(v) is not None for v in layer.get("keys", {}).values())
 
 
 def format_layer_line(layer_idx: int, layer: Dict) -> str:
@@ -414,11 +435,195 @@ class SayoLedController:
 
 
 # ==============================================================================
+# JACK MIDI Note Sender (via python-rtmidi -> ZynMidiRouter)
+# ==============================================================================
+# Uses rtmidi's C++ JACK backend so no Python code runs inside the JACK
+# realtime audio thread. ZynMidiRouter translates channel 1 notes to the
+# active chain automatically (FLAG_ZMIP_ACTIVE_CHAIN).
+# ==============================================================================
+
+class JackMidiSender:
+    """Persistent JACK MIDI output connected to a ZynMidiRouter input port."""
+
+    def __init__(
+        self,
+        target_port: str = MIDI_TARGET_PORT,
+        channel: int = MIDI_CHANNEL,
+        velocity: int = MIDI_VELOCITY,
+        enabled: bool = True,
+        client_name: str = "LayerCake-MIDI",
+        port_name: str = "out",
+    ) -> None:
+        self.target_port = target_port
+        self.channel = channel & 0x0F
+        self.velocity = max(1, min(127, int(velocity)))
+        self.enabled = enabled
+        self.client_name = client_name
+        self.port_name = port_name
+        self._lock = threading.Lock()
+        self._out = None
+        self._held_notes: set = set()
+
+    def _is_connected_to_target(self) -> bool:
+        """Check JACK graph outside lock to detect ZynMidiRouter restarts."""
+        try:
+            res = subprocess.run(
+                ["jack_lsp", "-c"],
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+            )
+            if res.returncode != 0:
+                return False
+            in_target = False
+            prefix = f"{self.client_name}:"
+            for line in res.stdout.splitlines():
+                if not line.startswith((" ", "\t")):
+                    in_target = line.strip() == self.target_port
+                elif in_target and line.strip().startswith(prefix):
+                    return True
+            return False
+        except (OSError, subprocess.SubprocessError):
+            return self._out is not None
+
+    def _close_locked(self) -> None:
+        if self._out is not None:
+            try:
+                self._out.close_port()
+            except Exception:
+                pass
+            try:
+                self._out.delete()
+            except Exception:
+                pass
+            self._out = None
+
+    def _connect_locked(self) -> Tuple[bool, bool]:
+        """Ensure rtmidi client is connected to target_port. Returns (connected, just_opened)."""
+        if not self.enabled:
+            return False, False
+        if self._out is not None:
+            return True, False
+        try:
+            import rtmidi
+        except ImportError:
+            logger.warning("python3-rtmidi is not installed. MIDI output disabled.")
+            self.enabled = False
+            return False, False
+
+        out = None
+        try:
+            out = rtmidi.MidiOut(rtmidi.API_UNIX_JACK, name=self.client_name)
+            ports = out.get_ports()
+            if self.target_port not in ports:
+                out.delete()
+                return False, False
+            out.open_port(ports.index(self.target_port), self.port_name)
+            self._out = out
+            logger.info("Connected MIDI output '%s:%s' -> '%s'", self.client_name, self.port_name, self.target_port)
+            return True, True
+        except Exception as exc:
+            logger.debug("Could not connect MIDI to %s (%s)", self.target_port, exc)
+            if out is not None:
+                try:
+                    out.delete()
+                except Exception:
+                    pass
+            return False, False
+
+    def ensure_connected(self, verify_jack: bool = False) -> bool:
+        if not self.enabled:
+            return False
+        if verify_jack:
+            with self._lock:
+                has_out = self._out is not None
+            if has_out and not self._is_connected_to_target():
+                logger.info("MIDI target %s re-appeared/changed; reconnecting...", self.target_port)
+                with self._lock:
+                    self._close_locked()
+        with self._lock:
+            ok, _ = self._connect_locked()
+            return ok
+
+    def connect_with_retry(self, attempts: int = 30, delay: float = 1.0) -> None:
+        if not self.enabled:
+            return
+        for _ in range(attempts):
+            if self.ensure_connected(verify_jack=False):
+                return
+            time.sleep(delay)
+        logger.info("JACK target %s not available yet; will connect on demand.", self.target_port)
+
+    def _send_note_on_locked(self, msg: List[int], note: int) -> bool:
+        ok, just_opened = self._connect_locked()
+        if not ok:
+            return False
+        if just_opened:
+            time.sleep(0.02)
+        self._out.send_message(msg)
+        self._held_notes.add(note)
+        return True
+
+    def note_on(self, note: int, velocity: Optional[int] = None) -> bool:
+        note &= 0x7F
+        vel = self.velocity if velocity is None else max(1, min(127, int(velocity)))
+        msg = [0x90 | self.channel, note, vel]
+        with self._lock:
+            if not self.enabled:
+                return False
+            try:
+                if self._send_note_on_locked(msg, note):
+                    return True
+                logger.warning("Cannot send Note On %d: %s unavailable", note, self.target_port)
+                return False
+            except Exception as exc:
+                logger.warning("MIDI Note On failed (%s); retrying...", exc)
+                self._close_locked()
+                try:
+                    return self._send_note_on_locked(msg, note)
+                except Exception:
+                    self._close_locked()
+                    return False
+
+    def note_off(self, note: int) -> bool:
+        note &= 0x7F
+        msg = [0x80 | self.channel, note, 0]
+        with self._lock:
+            self._held_notes.discard(note)
+            if self._out is None:
+                return False
+            try:
+                self._out.send_message(msg)
+                return True
+            except Exception as exc:
+                logger.warning("MIDI Note Off failed (%s); closing MIDI port", exc)
+                self._close_locked()
+                return False
+
+    def all_notes_off(self) -> None:
+        with self._lock:
+            notes = list(self._held_notes)
+            self._held_notes.clear()
+            if self._out is None:
+                return
+            for note in notes:
+                try:
+                    self._out.send_message([0x80 | self.channel, note, 0])
+                except Exception:
+                    pass
+
+    def close(self) -> None:
+        self.all_notes_off()
+        with self._lock:
+            self._close_locked()
+
+
+# ==============================================================================
 # Key Interceptor & Virtual Keyboard
 # ==============================================================================
 
 class LayerManager:
-    """Grabs SayoDevice events and re-emits translated keys via uinput."""
+    """Grabs SayoDevice events and re-emits translated keys and MIDI notes."""
 
     def __init__(
         self,
@@ -426,6 +631,7 @@ class LayerManager:
         overlay: TitleBarOverlay,
         device_query: str = "SayoDevice",
         led: Optional[SayoLedController] = None,
+        midi: Optional[JackMidiSender] = None,
     ) -> None:
         try:
             import evdev
@@ -440,6 +646,7 @@ class LayerManager:
         self.overlay = overlay
         self.device_query = device_query.lower()
         self.led = led
+        self.midi = midi
         self.current_layer = 0
         self.shift_held = False
         self.devices: List = []
@@ -453,6 +660,8 @@ class LayerManager:
         self.swallowed: set = set()
         # Physical key -> emitted key, so a release always matches its press
         self.active_outputs: Dict[int, int] = {}
+        # Physical key -> active MIDI note, so a release always stops the held note
+        self.active_notes: Dict[int, int] = {}
 
     def _find_sayodevices(self) -> List:
         matches = []
@@ -491,6 +700,24 @@ class LayerManager:
     def _show_current(self) -> None:
         self.overlay.notify_layer(self.current_layer, self.layers[self.current_layer])
 
+    def _verify_midi_async(self) -> None:
+        if self.midi is not None and self.midi.enabled and layer_has_midi(self.layers[self.current_layer]):
+            threading.Thread(
+                target=self.midi.ensure_connected,
+                kwargs={"verify_jack": True},
+                daemon=True,
+            ).start()
+
+    def release_all(self) -> None:
+        for code in list(self.active_notes):
+            note = self.active_notes.pop(code)
+            if self.midi is not None:
+                self.midi.note_off(note)
+        for code in list(self.active_outputs):
+            out = self.active_outputs.pop(code)
+            if self.uinput is not None:
+                self._emit(out, 0)
+
     def _handle(self, code: int, value: int) -> None:
         # value: 1 = press, 0 = release, 2 = autorepeat
 
@@ -514,9 +741,24 @@ class LayerManager:
             logger.debug("Layer -> %d", self.current_layer + 1)
             self._sync_led()
             self._show_current()
+            self._verify_midi_async()
             return
 
-        # Key being released/repeated that was translated on press
+        # Key currently holding a MIDI note: ignore autorepeat, stop on release
+        if code in self.active_notes:
+            if value == 0:
+                note = self.active_notes.pop(code)
+                logger.debug("Layer %d: Note Off %d", self.current_layer + 1, note)
+                if self.midi is not None:
+                    self.midi.note_off(note)
+                return
+            if value == 2:
+                return
+            prev = self.active_notes.pop(code)
+            if self.midi is not None:
+                self.midi.note_off(prev)
+
+        # Key being released/repeated that was translated to uinput on press
         if code in self.active_outputs and value != 1:
             out = self.active_outputs[code]
             if value == 0:
@@ -528,6 +770,13 @@ class LayerManager:
         if code in self.action_codes and value == 1:
             logical = self.action_codes[code]
             target = self.layers[self.current_layer]["keys"].get(logical, logical)
+            midi_note = parse_midi_target(target)
+            if midi_note is not None:
+                self.active_notes[code] = midi_note
+                logger.debug("Layer %d: %s -> MIDI Note On %d", self.current_layer + 1, logical, midi_note)
+                if self.midi is not None:
+                    self.midi.note_on(midi_note)
+                return
             out = getattr(self.ecodes, f"KEY_{target.upper()}", None)
             if out is None:
                 logger.warning("Layer %d: invalid key '%s' for '%s'", self.current_layer + 1, target, logical)
@@ -542,6 +791,8 @@ class LayerManager:
 
     def run(self) -> None:
         self.uinput = self._create_virtual_keyboard()
+        if self.midi is not None and self.midi.enabled and any(layer_has_midi(layer) for layer in self.layers):
+            threading.Thread(target=self.midi.connect_with_retry, daemon=True).start()
 
         while True:
             logger.info("Searching for SayoDevice matching '%s'...", self.device_query)
@@ -568,6 +819,7 @@ class LayerManager:
                                 self._handle(event.code, event.value)
             except (OSError, self.evdev.device.DeviceError) as exc:
                 logger.warning("SayoDevice error: %s. Re-detecting in 2s...", exc)
+                self.release_all()
                 if self.led is not None:
                     self.led.close()
                 for d in self.devices:
@@ -578,7 +830,6 @@ class LayerManager:
                 self.devices = []
                 self.shift_held = False
                 self.swallowed.clear()
-                self.active_outputs.clear()
                 time.sleep(2.0)
 
 
@@ -592,7 +843,10 @@ def main():
     parser.add_argument("--display", "-d", default=":0", help="X11 display for the overlay (default: :0)")
     parser.add_argument("--no-gui", action="store_true", help="Disable the overlay")
     parser.add_argument("--no-leds", action="store_true", help="Disable SayoDevice Shift key RGB LED updates")
+    parser.add_argument("--no-midi", action="store_true", help="Disable JACK MIDI note output")
+    parser.add_argument("--midi-port", default=MIDI_TARGET_PORT, help=f"JACK MIDI destination port (default: {MIDI_TARGET_PORT})")
     parser.add_argument("--test-leds", action="store_true", help="Cycle Shift key LED (Red -> Yellow -> Off) and exit")
+    parser.add_argument("--test-midi", action="store_true", help="Play short C3 and C4 test notes over JACK MIDI and exit")
     parser.add_argument("--test-layers", action="store_true", help="Print the layer table and exit")
     parser.add_argument("--list-devices", "-l", action="store_true", help="List input devices and exit")
     parser.add_argument("--verbose", "-v", action="store_true", help="Log every translated keystroke")
@@ -603,6 +857,14 @@ def main():
     if len(LAYERS) != len(LAYER_SELECT_KEYS):
         logger.error("LAYERS has %d entries but LAYER_SELECT_KEYS has %d", len(LAYERS), len(LAYER_SELECT_KEYS))
         sys.exit(1)
+
+    for idx, layer in enumerate(LAYERS):
+        for k, target in layer.get("keys", {}).items():
+            try:
+                parse_midi_target(target)
+            except ValueError as exc:
+                logger.error("Layer %d key '%s' invalid target '%s': %s", idx + 1, k, target, exc)
+                sys.exit(1)
 
     if args.list_devices:
         import evdev
@@ -633,9 +895,23 @@ def main():
             led.close()
         sys.exit(0)
 
+    if args.test_midi:
+        midi = JackMidiSender(target_port=args.midi_port, enabled=True)
+        try:
+            for label, note in (("C3", 48), ("C4", 60)):
+                ok = midi.note_on(note)
+                print(f"MIDI {label} ({note}) -> {args.midi_port}: {'OK' if ok else 'FAILED'}")
+                time.sleep(0.5)
+                midi.note_off(note)
+                time.sleep(0.1)
+        finally:
+            midi.close()
+        sys.exit(0)
+
     overlay = TitleBarOverlay("" if args.no_gui else args.display)
     led = SayoLedController(enabled=not args.no_leds, query=args.query)
-    manager = LayerManager(LAYERS, overlay, args.query, led=led)
+    midi = JackMidiSender(target_port=args.midi_port, enabled=not args.no_midi)
+    manager = LayerManager(LAYERS, overlay, args.query, led=led, midi=midi)
     worker = threading.Thread(target=manager.run, daemon=True)
     worker.start()
 
@@ -648,6 +924,8 @@ def main():
     except KeyboardInterrupt:
         logger.info("Exiting.")
     finally:
+        manager.release_all()
+        midi.close()
         led.set_color(LED_OFF, force=True)
         led.close()
 
