@@ -17,15 +17,17 @@
 # ==============================================================================
 
 import argparse
+import glob
 import logging
 import os
 import queue
 import re
 import select
+import struct
 import sys
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,41 +41,54 @@ logger = logging.getLogger("LayerCake")
 # ==============================================================================
 # 'keys'   : what each physical key (a, b, c, d) emits on this layer
 # 'labels' : short description shown on the overlay
+# 'led'    : (R, G, B) color for Key 4 (Shift) LED in 0..255 ((0,0,0) = off)
 # Layers are listed in order: index 0 = Layer 1 ... index 7 = Layer 8.
 # ==============================================================================
+
+LED_OFF: Tuple[int, int, int] = (0, 0, 0)
+LED_RED: Tuple[int, int, int] = (255, 0, 0)
+LED_YELLOW: Tuple[int, int, int] = (255, 255, 0)
 
 LAYERS: List[Dict] = [
     {   # Layer 1 (Shift + Up)
         "keys": {"a": "a", "b": "b", "c": "c", "d": "d"},
         "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C1", "d": "Btn D1"},
+        "led": LED_OFF,
     },
     {   # Layer 2 (Shift + Down)
         "keys": {"a": "a", "b": "b", "c": "e", "d": "f"},
         "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C2", "d": "Btn D2"},
+        "led": LED_RED,
     },
     {   # Layer 3 (Shift + Left)
         "keys": {"a": "a", "b": "b", "c": "g", "d": "h"},
         "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C3", "d": "Btn D3"},
+        "led": LED_RED,
     },
     {   # Layer 4 (Shift + Right)
         "keys": {"a": "a", "b": "b", "c": "i", "d": "j"},
         "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C4", "d": "Btn D4"},
+        "led": LED_RED,
     },
     {   # Layer 5 (Shift + A)
         "keys": {"a": "a", "b": "b", "c": "k", "d": "l"},
         "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C5", "d": "Btn D5"},
+        "led": LED_RED,
     },
     {   # Layer 6 (Shift + B)
         "keys": {"a": "a", "b": "b", "c": "m", "d": "n"},
         "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Btn C6", "d": "Btn D6"},
+        "led": LED_RED,
     },
     {   # Layer 7 (Shift + C) - secondary / parameter editing
         "keys": {"a": "o", "b": "p", "c": "q", "d": "r"},
         "labels": {"a": "Edit A7", "b": "Edit B7", "c": "Edit C7", "d": "Edit D7"},
+        "led": LED_YELLOW,
     },
     {   # Layer 8 (Shift + D) - secondary / parameter editing
         "keys": {"a": "s", "b": "t", "c": "u", "d": "v"},
         "labels": {"a": "Edit A8", "b": "Edit B8", "c": "Edit C8", "d": "Edit D8"},
+        "led": LED_YELLOW,
     },
 ]
 
@@ -244,13 +259,174 @@ class TitleBarOverlay:
 
 
 # ==============================================================================
+# SayoDevice USB HID RGB LED Controller (API v2, Report ID 0x21)
+# ==============================================================================
+# Updates Key 4 (Shift) LED in volatile RAM via /dev/hidraw* without sending
+# Save (0x0d), so EEPROM/flash is never written during layer switches.
+# ==============================================================================
+
+SAYO_HID_VENDOR_HEX = "00008089"
+SAYO_REPORT_ID_V2 = 0x21
+SAYO_CMD_LIGHT = 0x11
+SAYO_SHIFT_LED_INDEX = 0x08
+# Bytes [8:28] captured from SayoDevice 2x6F RGB (8089:0008) for Key 4 (Shift)
+SAYO_SHIFT_LED_HEADER = bytes.fromhex("01000000ba134e0c080708076400000000000000")
+
+
+def _v2_pack_packet(cmd_id: int, index: int, data: bytes = b"", echo: int = 0x12) -> bytes:
+    """Build a 64-byte SayoDevice API v2 HID packet with 16-bit LE checksum."""
+    cmd_len = 4 + len(data)
+    pkt = bytearray(64)
+    pkt[0] = SAYO_REPORT_ID_V2
+    pkt[1] = echo & 0xFF
+    struct.pack_into("<HBB", pkt, 4, cmd_len, cmd_id & 0xFF, index & 0xFF)
+    if data:
+        end = min(64, 8 + len(data))
+        pkt[8:end] = data[: end - 8]
+    csum = sum(struct.unpack("<32H", pkt)) & 0xFFFF
+    struct.pack_into("<H", pkt, 2, csum)
+    return bytes(pkt)
+
+
+class SayoLedController:
+    """Drives Key 4 (Shift) RGB LED on a SayoDevice 2x6F RGB via /dev/hidraw*."""
+
+    def __init__(self, enabled: bool = True, query: str = "SayoDevice") -> None:
+        self.enabled = enabled
+        self.query = query.lower()
+        self.fd: Optional[int] = None
+        self.path: Optional[str] = None
+        self.base_template: Optional[bytearray] = None
+        self.last_rgb: Optional[Tuple[int, int, int]] = None
+
+    def _find_hidraw_path(self) -> Optional[str]:
+        for sys_path in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+            try:
+                with open(os.path.join(sys_path, "device", "uevent"), "r") as fh:
+                    uevent = fh.read()
+                if SAYO_HID_VENDOR_HEX not in uevent.lower() and self.query not in uevent.lower():
+                    continue
+                with open(os.path.join(sys_path, "device", "report_descriptor"), "rb") as fh:
+                    desc = fh.read()
+                # Vendor interface containing Report ID 0x21 (64-byte v2 API)
+                if b"\x85\x21" in desc:
+                    return os.path.join("/dev", os.path.basename(sys_path))
+            except OSError:
+                continue
+        return None
+
+    def _drain(self, timeout: float = 0.05) -> Optional[bytes]:
+        if self.fd is None:
+            return None
+        last = None
+        while select.select([self.fd], [], [], timeout)[0]:
+            try:
+                last = os.read(self.fd, 1024)
+            except BlockingIOError:
+                break
+            timeout = 0.01
+        return last
+
+    def _open(self) -> bool:
+        if not self.enabled:
+            return False
+        if self.fd is not None:
+            return True
+        path = self._find_hidraw_path()
+        if not path:
+            return False
+        try:
+            self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+            self.path = path
+            self._drain(0.01)
+            self._load_template()
+            logger.info("Connected to SayoDevice LED HID interface (%s)", path)
+            return True
+        except OSError as exc:
+            logger.warning("Cannot open %s for LED control: %s", path, exc)
+            self.close()
+            return False
+
+    def _load_template(self) -> None:
+        """Read current Key 4 Light struct from device to preserve existing fields."""
+        if self.fd is None:
+            return
+        try:
+            os.write(self.fd, _v2_pack_packet(SAYO_CMD_LIGHT, SAYO_SHIFT_LED_INDEX))
+            resp = self._drain(0.15)
+            if resp and len(resp) == 64 and resp[0] == SAYO_REPORT_ID_V2:
+                cmd_len_word = struct.unpack_from("<H", resp, 4)[0]
+                # Response flag bits can be set in high nibble (e.g. 0x40xx); valid Light struct >= 32 bytes
+                if (cmd_len_word & 0x0FFF) >= 32 and resp[6] == SAYO_CMD_LIGHT and resp[7] == SAYO_SHIFT_LED_INDEX:
+                    self.base_template = bytearray(resp)
+                    logger.debug("Loaded live Light template for index 0x%02x", SAYO_SHIFT_LED_INDEX)
+        except OSError as exc:
+            logger.debug("Could not read live Light template (%s); using default", exc)
+
+    def build_packet(self, rgb: Tuple[int, int, int]) -> bytes:
+        """Build the 64-byte API v2 packet for Key 4 with the given (R, G, B) tuple."""
+        r, g, b = (max(0, min(255, int(c))) for c in rgb)
+        if self.base_template is not None and len(self.base_template) == 64:
+            pkt = bytearray(self.base_template)
+            pkt[1] = 0x12
+            pkt[2] = 0
+            pkt[3] = 0
+            struct.pack_into("<HBB", pkt, 4, 0x003C, SAYO_CMD_LIGHT, SAYO_SHIFT_LED_INDEX)
+            pkt[28] = r
+            pkt[29] = g
+            pkt[30] = b
+            pkt[31] = 0x01
+            csum = sum(struct.unpack("<32H", pkt)) & 0xFFFF
+            struct.pack_into("<H", pkt, 2, csum)
+            return bytes(pkt)
+        # Full 64-byte packet requires cmd_len = 0x003C (56-byte padded payload + 4-byte cmd header)
+        payload = (SAYO_SHIFT_LED_HEADER + bytes([r, g, b, 0x01])).ljust(56, b"\x00")
+        return _v2_pack_packet(SAYO_CMD_LIGHT, SAYO_SHIFT_LED_INDEX, payload)
+
+    def set_color(self, rgb: Tuple[int, int, int], force: bool = False) -> bool:
+        if not self.enabled:
+            return False
+        if not force and self.last_rgb == rgb and self.fd is not None:
+            return True
+        if not self._open():
+            return False
+        pkt = self.build_packet(rgb)
+        try:
+            os.write(self.fd, pkt)
+            self._drain(0.05)
+            self.last_rgb = rgb
+            return True
+        except OSError as exc:
+            logger.warning("SayoDevice LED write failed (%s); closing %s", exc, self.path)
+            self.close()
+            return False
+
+    def close(self) -> None:
+        if self.fd is not None:
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
+            self.fd = None
+            self.path = None
+            self.base_template = None
+            self.last_rgb = None
+
+
+# ==============================================================================
 # Key Interceptor & Virtual Keyboard
 # ==============================================================================
 
 class LayerManager:
     """Grabs SayoDevice events and re-emits translated keys via uinput."""
 
-    def __init__(self, layers: List[Dict], overlay: TitleBarOverlay, device_query: str = "SayoDevice") -> None:
+    def __init__(
+        self,
+        layers: List[Dict],
+        overlay: TitleBarOverlay,
+        device_query: str = "SayoDevice",
+        led: Optional[SayoLedController] = None,
+    ) -> None:
         try:
             import evdev
             from evdev import ecodes
@@ -263,6 +439,7 @@ class LayerManager:
         self.layers = layers
         self.overlay = overlay
         self.device_query = device_query.lower()
+        self.led = led
         self.current_layer = 0
         self.shift_held = False
         self.devices: List = []
@@ -306,6 +483,11 @@ class LayerManager:
         self.uinput.write(self.ecodes.EV_KEY, code, value)
         self.uinput.syn()
 
+    def _sync_led(self, force: bool = False) -> None:
+        if self.led is not None:
+            rgb = self.layers[self.current_layer].get("led", LED_OFF)
+            self.led.set_color(rgb, force=force)
+
     def _show_current(self) -> None:
         self.overlay.notify_layer(self.current_layer, self.layers[self.current_layer])
 
@@ -330,6 +512,7 @@ class LayerManager:
             self.current_layer = self.layer_select[code]
             self.swallowed.add(code)
             logger.debug("Layer -> %d", self.current_layer + 1)
+            self._sync_led()
             self._show_current()
             return
 
@@ -373,6 +556,7 @@ class LayerManager:
                     d.grab()
                 except Exception as exc:
                     logger.warning("Could not grab %s: %s", d.name, exc)
+            self._sync_led(force=True)
             logger.info("Monitoring %d endpoint(s). Ready.", len(self.devices))
 
             try:
@@ -384,6 +568,8 @@ class LayerManager:
                                 self._handle(event.code, event.value)
             except (OSError, self.evdev.device.DeviceError) as exc:
                 logger.warning("SayoDevice error: %s. Re-detecting in 2s...", exc)
+                if self.led is not None:
+                    self.led.close()
                 for d in self.devices:
                     try:
                         d.ungrab()
@@ -405,6 +591,8 @@ def main():
     parser.add_argument("--query", "-q", default="SayoDevice", help="Device name to match (default: SayoDevice)")
     parser.add_argument("--display", "-d", default=":0", help="X11 display for the overlay (default: :0)")
     parser.add_argument("--no-gui", action="store_true", help="Disable the overlay")
+    parser.add_argument("--no-leds", action="store_true", help="Disable SayoDevice Shift key RGB LED updates")
+    parser.add_argument("--test-leds", action="store_true", help="Cycle Shift key LED (Red -> Yellow -> Off) and exit")
     parser.add_argument("--test-layers", action="store_true", help="Print the layer table and exit")
     parser.add_argument("--list-devices", "-l", action="store_true", help="List input devices and exit")
     parser.add_argument("--verbose", "-v", action="store_true", help="Log every translated keystroke")
@@ -428,13 +616,26 @@ def main():
     if args.test_layers:
         for idx, layer in enumerate(LAYERS):
             k = layer["keys"]
+            rgb = layer.get("led", LED_OFF)
             sel = LAYER_SELECT_KEYS[idx].replace("KEY_", "")
             print(f"Shift+{sel:<5} -> {format_layer_line(idx, layer)}   "
-                  f"(emits a:{k['a']} b:{k['b']} c:{k['c']} d:{k['d']})")
+                  f"(emits a:{k['a']} b:{k['b']} c:{k['c']} d:{k['d']}, led:#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x})")
+        sys.exit(0)
+
+    if args.test_leds:
+        led = SayoLedController(enabled=True, query=args.query)
+        try:
+            for label, rgb in (("Red", LED_RED), ("Yellow", LED_YELLOW), ("Off", LED_OFF)):
+                ok = led.set_color(rgb, force=True)
+                print(f"Shift LED -> {label} #{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}: {'OK' if ok else 'FAILED'}")
+                time.sleep(1.0)
+        finally:
+            led.close()
         sys.exit(0)
 
     overlay = TitleBarOverlay("" if args.no_gui else args.display)
-    manager = LayerManager(LAYERS, overlay, args.query)
+    led = SayoLedController(enabled=not args.no_leds, query=args.query)
+    manager = LayerManager(LAYERS, overlay, args.query, led=led)
     worker = threading.Thread(target=manager.run, daemon=True)
     worker.start()
 
@@ -446,6 +647,9 @@ def main():
                 time.sleep(1.0)
     except KeyboardInterrupt:
         logger.info("Exiting.")
+    finally:
+        led.set_color(LED_OFF, force=True)
+        led.close()
 
 
 if __name__ == "__main__":
