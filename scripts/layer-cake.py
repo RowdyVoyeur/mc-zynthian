@@ -41,7 +41,7 @@ logger = logging.getLogger("LayerCake")
 # Layer Configuration (edit here)
 # ==============================================================================
 # 'keys'   : what each physical key (a, b, c, d) emits on this layer:
-#            either a key name (e.g. 'a') or 'midi:<0..127>' (e.g. 'midi:48')
+#            a key name (e.g. 'a'), 'midi:<0..127>', 'midi:alt', or 'midi:preview'
 # 'labels' : short description shown on the overlay
 # 'led'    : (R, G, B) color for Key 4 (Shift) LED in 0..255 ((0,0,0) = off)
 # Layers are listed in order: index 0 = Layer 1 ... index 7 = Layer 8.
@@ -54,6 +54,13 @@ LED_YELLOW: Tuple[int, int, int] = (255, 255, 0)
 MIDI_TARGET_PORT = "ZynMidiRouter:dev23_in"
 MIDI_CHANNEL = 0       # 0-based (Ch 1); ZynMidiRouter routes & translates to active chain
 MIDI_VELOCITY = 100
+MIDI_PREVIEW_DEFAULT = 60  # C4
+MIDI_PREVIEW_MIN = 36      # C2 (2 octaves below C4)
+MIDI_PREVIEW_MAX = 84      # C6 (2 octaves above C4; 4 octaves total)
+
+MIDI_ACTION_ALT = "midi:alt"
+MIDI_ACTION_PREVIEW = "midi:preview"
+NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
 LAYERS: List[Dict] = [
     {   # Layer 1 (Shift + Up)
@@ -62,8 +69,8 @@ LAYERS: List[Dict] = [
         "led": LED_OFF,
     },
     {   # Layer 2 (Shift + Down)
-        "keys": {"a": "a", "b": "b", "c": "midi:48", "d": "midi:60"},
-        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Preview C3", "d": "Preview C4"},
+        "keys": {"a": "a", "b": "b", "c": MIDI_ACTION_ALT, "d": MIDI_ACTION_PREVIEW},
+        "labels": {"a": "Knob 2", "b": "Knob 4", "c": "Note +/-", "d": "Preview"},
         "led": LED_RED,
     },
     {   # Layer 3 (Shift + Left)
@@ -139,9 +146,41 @@ def read_zynthian_envar(name: str, default: str) -> str:
     return default
 
 
+def format_midi_note(note: int) -> str:
+    """Return human-readable note name (e.g. 60 -> 'C4', 61 -> 'C#4')."""
+    return f"{NOTE_NAMES[note % 12]}{note // 12 - 1}"
+
+
+def step_preview_note(
+    note: int,
+    delta: int,
+    lo: int = MIDI_PREVIEW_MIN,
+    hi: int = MIDI_PREVIEW_MAX,
+) -> int:
+    """Step a preview note by semitones or octaves, wrapping cleanly within [lo, hi]."""
+    if abs(delta) == 12:
+        nxt = note + delta
+        if nxt > hi:
+            while nxt - 12 >= lo:
+                nxt -= 12
+        elif nxt < lo:
+            while nxt + 12 <= hi:
+                nxt += 12
+        return nxt
+    span = hi - lo + 1
+    return lo + (note - lo + delta) % span
+
+
+def is_midi_target(target: str) -> bool:
+    """Return True if target is any MIDI key action ('midi:...')."""
+    return isinstance(target, str) and target.startswith("midi:")
+
+
 def parse_midi_target(target: str) -> Optional[int]:
-    """Return MIDI note number (0..127) if target is 'midi:<note>', else None."""
-    if not isinstance(target, str) or not target.startswith("midi:"):
+    """Return MIDI note number (0..127) for 'midi:<note>', None for non-note/special actions."""
+    if not is_midi_target(target):
+        return None
+    if target in (MIDI_ACTION_ALT, MIDI_ACTION_PREVIEW):
         return None
     note = int(target.split(":", 1)[1])
     if not 0 <= note <= 127:
@@ -150,8 +189,8 @@ def parse_midi_target(target: str) -> Optional[int]:
 
 
 def layer_has_midi(layer: Dict) -> bool:
-    """Return True if any key in the layer emits a MIDI note."""
-    return any(parse_midi_target(v) is not None for v in layer.get("keys", {}).values())
+    """Return True if any key in the layer uses MIDI output."""
+    return any(is_midi_target(v) for v in layer.get("keys", {}).values())
 
 
 def format_layer_line(layer_idx: int, layer: Dict) -> str:
@@ -250,11 +289,14 @@ class TitleBarOverlay:
             logger.warning("Could not configure overlay (%s). Overlay disabled.", exc)
             self.enabled = False
 
-    def notify_layer(self, layer_idx: int, layer: Dict) -> None:
-        self.event_queue.put((layer_idx, layer))
+    def notify_text(self, text: str) -> None:
+        self.event_queue.put(text)
 
-    def _show(self, layer_idx: int, layer: Dict) -> None:
-        self.label.config(text=format_layer_line(layer_idx, layer))
+    def notify_layer(self, layer_idx: int, layer: Dict) -> None:
+        self.notify_text(format_layer_line(layer_idx, layer))
+
+    def _show_text(self, text: str) -> None:
+        self.label.config(text=text)
         if self.hide_timer_id is not None:
             self.root.after_cancel(self.hide_timer_id)
         self.root.deiconify()
@@ -269,8 +311,8 @@ class TitleBarOverlay:
         def process_queue():
             try:
                 while True:
-                    layer_idx, layer = self.event_queue.get_nowait()
-                    self._show(layer_idx, layer)
+                    text = self.event_queue.get_nowait()
+                    self._show_text(text)
             except queue.Empty:
                 pass
             self.root.after(30, process_queue)
@@ -655,8 +697,17 @@ class LayerManager:
         self.shift_codes = {ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT}
         self.layer_select = {getattr(ecodes, name): idx for idx, name in enumerate(LAYER_SELECT_KEYS)}
         self.action_codes = {getattr(ecodes, name): logical for name, logical in ACTION_KEYS.items()}
+        self.note_step_deltas: Dict[int, int] = {
+            ecodes.KEY_UP: 1,
+            ecodes.KEY_DOWN: -1,
+            ecodes.KEY_RIGHT: 12,
+            ecodes.KEY_LEFT: -12,
+        }
 
-        # Physical keys whose press was used to switch layers (release is swallowed)
+        self.preview_note: int = MIDI_PREVIEW_DEFAULT
+        # Physical key currently held as the Note +/- modifier (e.g. Key C on Layer 2)
+        self.note_alt_code: Optional[int] = None
+        # Physical keys whose press was consumed by a modifier combo (release is swallowed)
         self.swallowed: set = set()
         # Physical key -> emitted key, so a release always matches its press
         self.active_outputs: Dict[int, int] = {}
@@ -700,6 +751,10 @@ class LayerManager:
     def _show_current(self) -> None:
         self.overlay.notify_layer(self.current_layer, self.layers[self.current_layer])
 
+    def _show_preview_note(self) -> None:
+        note_name = format_midi_note(self.preview_note)
+        self.overlay.notify_text(f"{self.current_layer + 1}:   Preview Note: {note_name}")
+
     def _verify_midi_async(self) -> None:
         if self.midi is not None and self.midi.enabled and layer_has_midi(self.layers[self.current_layer]):
             threading.Thread(
@@ -709,6 +764,7 @@ class LayerManager:
             ).start()
 
     def release_all(self) -> None:
+        self.note_alt_code = None
         for code in list(self.active_notes):
             note = self.active_notes.pop(code)
             if self.midi is not None:
@@ -728,7 +784,7 @@ class LayerManager:
                 self._show_current()
             return
 
-        # Release / repeat of a key that was consumed for layer selection
+        # Release / repeat of a key that was consumed by a modifier combo
         if code in self.swallowed:
             if value == 0:
                 self.swallowed.discard(code)
@@ -736,12 +792,32 @@ class LayerManager:
 
         # Shift + select key -> jump directly to layer
         if self.shift_held and value == 1 and code in self.layer_select:
+            if self.note_alt_code is not None:
+                self.swallowed.add(self.note_alt_code)
+                self.note_alt_code = None
             self.current_layer = self.layer_select[code]
             self.swallowed.add(code)
+            if MIDI_ACTION_PREVIEW in self.layers[self.current_layer].get("keys", {}).values():
+                self.preview_note = MIDI_PREVIEW_DEFAULT
             logger.debug("Layer -> %d", self.current_layer + 1)
             self._sync_led()
             self._show_current()
             self._verify_midi_async()
+            return
+
+        # Release / repeat of the held Note +/- modifier key
+        if self.note_alt_code is not None and code == self.note_alt_code:
+            if value == 0:
+                self.note_alt_code = None
+            return
+
+        # Note +/- modifier + arrows -> step preview note (Up/Down +/-1st, Left/Right +/-1oct)
+        if self.note_alt_code is not None and value == 1 and code in self.note_step_deltas:
+            delta = self.note_step_deltas[code]
+            self.preview_note = step_preview_note(self.preview_note, delta)
+            self.swallowed.add(code)
+            logger.debug("Preview note -> %s (%d)", format_midi_note(self.preview_note), self.preview_note)
+            self._show_preview_note()
             return
 
         # Key currently holding a MIDI note: ignore autorepeat, stop on release
@@ -770,10 +846,15 @@ class LayerManager:
         if code in self.action_codes and value == 1:
             logical = self.action_codes[code]
             target = self.layers[self.current_layer]["keys"].get(logical, logical)
-            midi_note = parse_midi_target(target)
+            if target == MIDI_ACTION_ALT:
+                self.note_alt_code = code
+                self._show_preview_note()
+                return
+            midi_note = self.preview_note if target == MIDI_ACTION_PREVIEW else parse_midi_target(target)
             if midi_note is not None:
                 self.active_notes[code] = midi_note
-                logger.debug("Layer %d: %s -> MIDI Note On %d", self.current_layer + 1, logical, midi_note)
+                logger.debug("Layer %d: %s -> MIDI Note On %s (%d)",
+                             self.current_layer + 1, logical, format_midi_note(midi_note), midi_note)
                 if self.midi is not None:
                     self.midi.note_on(midi_note)
                 return
